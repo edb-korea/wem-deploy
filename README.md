@@ -89,11 +89,12 @@ ansible-playbook playbooks/generate_inventory.yml -e inventory_output=/tmp/inv.y
 
 1. `inventory/cluster_vars.yml` 의 `whpg_coordinator_hosts` 에 적힌 순서로 SSH 접속합니다. VIP 와 coordinator 를 적어 두면 순서대로 처리한다. 
 
-   ```yaml
+```yaml
 whpg_coordinator_hosts:
    - { ip: "10.0.8.209",  hostname: "whpg-vip" }  # VIP
    - { ip: "10.0.8.209",  hostname: "whpg-cdw" }  # coordinator
-   ```
+```
+
    `-e whpg_coordinator=<IP 또는 이름>[,<IP>...]` 를 주면 그 값이 우선합니다. 기존 `inventory.yml` 은 보지 않으므로 `inventory.yml` 이 없어도 됩니다.
    SSH 접속 변수(`ansible_user`, `ansible_port`, `ansible_ssh_common_args` 등)도 `cluster_vars.yml` 에서 읽습니다. 적지 않으면 ansible 을 실행한 계정, `~/.ssh` 기본 키, `sudo` 로 root 입니다.
 2. gpadmin 으로 `gp_segment_configuration` 을 조회하고(recovery 상태인 standby 에서는 실패하므로 건너뜀) 그 서버의 `/etc/hosts` 를 읽습니다.
