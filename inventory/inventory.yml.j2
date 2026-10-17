@@ -1,0 +1,35 @@
+---
+# =============================================================================
+# 자동 생성 파일 — 직접 수정하지 마세요. ({{ _gen_time }})
+#   호스트: {{ _gen_src.seed }} 의 gp_segment_configuration + /etc/hosts, 각 서버의 실제 hostname
+#   공통 변수: {{ inventory_cluster_vars_file }}
+#   다시 만들기: ansible-playbook playbooks/generate_inventory.yml
+# =============================================================================
+whpg_clusters:
+  children:
+    {{ inventory_cluster_group }}:
+      vars:
+        {{ lookup('ansible.builtin.file', inventory_cluster_vars_file) | indent(8) }}
+      hosts:
+{% for e in _gen_entries %}
+        {{ e.name }}:
+          ansible_host: {{ e.ip }}
+          ip_address: {{ e.ip }}
+          hostname: {{ e.hostname }}
+          hostname_alias: {{ e.alias }}
+          whpg_role: {{ e.whpg_role }}
+{% endfor %}
+{% for g, role in {'coordinator': 'coordinator', 'standby_coordinator': 'standby', 'segments': 'segment'}.items() %}
+{% set members = _gen_entries | selectattr('whpg_role', 'equalto', role) | map(attribute='name') | list %}
+
+# whpg_role: {{ role }}
+{{ g }}:
+{% if members | length > 0 %}
+  hosts:
+{% for h in members %}
+    {{ h }}:
+{% endfor %}
+{% else %}
+  hosts: {}
+{% endif %}
+{% endfor %}

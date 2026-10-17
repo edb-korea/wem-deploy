@@ -1,0 +1,64 @@
+---
+# WEM 1.2 삭제 (Prometheus / Loki / Alertmanager / Alloy / collector)
+# tag: cleanup
+- name: Stop and disable WEM related services (없는 서비스는 건너뜀)
+  ansible.builtin.shell:
+    cmd: |
+      for s in {{ cleanup_services | join(' ') }}; do
+        if systemctl list-unit-files "$s.service" 2>/dev/null | grep -q "^$s.service"; then
+          systemctl disable --now "$s" && echo "stopped: $s"
+        fi
+      done
+    executable: /bin/bash
+  register: _stop_services
+  changed_when: _stop_services.stdout | length > 0
+
+- name: Remove WEM 1.2 / observability packages
+  ansible.builtin.dnf:
+    name: "{{ cleanup_packages }}"
+    state: absent
+  timeout: "{{ DNF_TIMEOUT }}"
+
+- name: Remove Alloy / collector files (all hosts)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ cleanup_paths_all_hosts }}"
+
+- name: Remove WEM host files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ cleanup_paths_wem_host }}"
+  when: inventory_hostname == wem_host
+
+- name: Remove observability system users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: absent
+  loop: "{{ cleanup_users }}"
+  when: inventory_hostname == wem_host
+
+- name: Reload systemd after cleanup
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Drop WEM 1.2 state database in WHPG
+  ansible.builtin.shell:
+    cmd: |
+      source /usr/local/greenplum-db/greenplum_path.sh
+      psql -d postgres -c "DROP DATABASE IF EXISTS {{ wem_state_database }};"
+    executable: /bin/bash
+  become_user: gpadmin
+  register: _drop_old_state
+  changed_when: "'DROP' in _drop_old_state.stdout"
+  failed_when: false
+  when:
+    - inventory_hostname == coordinator_host
+    - wem_drop_old_state_db_in_whpg | bool
+    - wem_state_database not in wem_protected_databases
+
+- name: Show result of dropping old WEM state database
+  ansible.builtin.debug:
+    msg: "{{ (_drop_old_state.stdout_lines | default([])) + (_drop_old_state.stderr_lines | default([])) }}"
+  when: inventory_hostname == coordinator_host

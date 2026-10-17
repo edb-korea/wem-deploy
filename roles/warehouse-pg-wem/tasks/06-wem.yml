@@ -1,0 +1,70 @@
+---
+# WEM 1.4 설치와 wem.conf (WEM host)
+# tag: wem
+- name: Install and configure WEM 1.4
+  when: inventory_hostname == wem_host
+  block:
+    - name: Install WEM 1.4 package
+      ansible.builtin.dnf:
+        name: "{{ wem14_package }}"
+        state: present
+      timeout: "{{ DNF_TIMEOUT }}"
+
+    - name: Generate WEM_COOKIE_SECRET
+      ansible.builtin.command: openssl rand -hex 32
+      register: _cookie_secret
+      changed_when: false
+      no_log: true
+
+    # Host Agent 자동 승인용 공유 비밀
+    - name: Generate WEM_AGENT_JOIN_SECRET
+      ansible.builtin.command: openssl rand -hex 32
+      register: _join_secret
+      changed_when: false
+      no_log: true
+
+    - name: Keep generated secrets as facts
+      ansible.builtin.set_fact:
+        wem_cookie_secret_value: "{{ _cookie_secret.stdout | trim }}"
+        wem_join_secret_value: "{{ _join_secret.stdout | trim }}"
+      no_log: true
+
+    - name: Write /etc/wem/wem.conf
+      ansible.builtin.template:
+        src: wem.conf.j2
+        dest: "{{ wem_config_file }}"
+        owner: root
+        group: "{{ wem_unix_group }}"
+        mode: "0640"
+      no_log: true
+
+    - name: Open WEM / ClickHouse ports in firewalld (실행 중인 경우만)
+      ansible.builtin.shell:
+        cmd: |
+          if systemctl is-active --quiet firewalld; then
+            for p in {{ wem_port }} {{ wem_agent_port }} {{ clickhouse_native_port }}; do
+              firewall-cmd --permanent --add-port=${p}/tcp
+            done
+            firewall-cmd --reload
+            echo opened
+          fi
+        executable: /bin/bash
+      register: _fw
+      changed_when: "'opened' in _fw.stdout"
+      when: wem_manage_firewall | bool
+
+    - name: Enable and start WEM
+      ansible.builtin.systemd:
+        name: wem
+        enabled: true
+        state: restarted
+        daemon_reload: true
+
+    - name: Wait for WEM web / agent relay ports
+      ansible.builtin.wait_for:
+        host: "{{ wem_host_ip }}"
+        port: "{{ item }}"
+        timeout: 180
+      loop:
+        - "{{ wem_port }}"
+        - "{{ wem_agent_port }}"

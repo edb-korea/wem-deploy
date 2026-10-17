@@ -1,0 +1,53 @@
+---
+# WEM 1.2 삭제 후 WEM 1.4 구성. run_wem_1.2_to_1.4.yml 이 이 파일을 실행한다.
+# 단계별 tag 로 일부만 실행할 수 있다 (예: -t tune). 자세한 내용은 ansible/README.md 를 참고한다.
+
+# 실행 전 확인 (OS, VIP 활성 여부, wem_use_vip 조건, 배치 출력)
+- name: "00-checks"
+  ansible.builtin.import_tasks: 00-checks.yml
+  tags: [always]
+
+# WEM 1.2 삭제 (Prometheus / Loki / Alertmanager / Alloy / collector)
+- name: "01-cleanup-wem12"
+  ansible.builtin.import_tasks: 01-cleanup-wem12.yml
+  tags: [cleanup]
+
+# WHPG pg_hba.conf 에 클러스터 노드 접속 허용
+- name: "03-pg-hba"
+  ansible.builtin.import_tasks: 03-pg-hba.yml
+  tags: [pghba]
+
+# ClickHouse 설치 (WEM host)
+- name: "04-clickhouse"
+  ansible.builtin.import_tasks: 04-clickhouse.yml
+  tags: [clickhouse]
+
+# WEM 상태용 PostgreSQL 설치 (WEM host)
+- name: "05-state-database"
+  ansible.builtin.import_tasks: 05-state-database.yml
+  tags: [statedb]
+
+# WEM 1.4 설치와 wem.conf (WEM host)
+- name: "06-wem"
+  ansible.builtin.import_tasks: 06-wem.yml
+  tags: [wem]
+
+# Host Agent + otelcol 설치, join-token 선등록 (전 노드)
+- name: "07-host-agent"
+  ansible.builtin.import_tasks: 07-host-agent.yml
+  tags: [agent]
+
+# otelcol 설정 조정 (CPU 절감, DB 메트릭 수집 위치)
+- name: "08-otelcol-tune"
+  ansible.builtin.import_tasks: 08-otelcol-tune.yml
+  tags: [tune]
+
+# ClickHouse Coordinator Query Logs 객체 (WEM host)
+- name: "09-query-logs"
+  ansible.builtin.import_tasks: 09-query-logs.yml
+  tags: [querylogs]
+
+# 서비스 상태 확인
+- name: "10-summary"
+  ansible.builtin.import_tasks: 10-summary.yml
+  tags: [always]

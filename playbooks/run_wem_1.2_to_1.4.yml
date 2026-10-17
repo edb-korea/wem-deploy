@@ -1,0 +1,33 @@
+---
+# =============================================================================
+# WEM 1.2 삭제 후 WEM 1.4 구성 (원샷)
+#
+#   ansible-playbook playbooks/run_wem_1.2_to_1.4.yml                      # 기본
+#   ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e wem_use_vip=true  # DB 메트릭을 VIP 로 수집 (HA 환경)
+#   ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -t tune              # 일부 단계만 (아래 tags)
+#
+# 이 playbook 은 role 하나(warehouse-pg-wem)만 호출한다.
+# 단계별 작업은 roles/warehouse-pg-wem/tasks/ 의 파일로 나뉘어 있고, 변수는 defaults/main.yml 에 있다.
+# 사용법, 변수 목록, 문제 해결은 README.md 를 참고한다.
+#
+#   tasks 파일               tag          내용
+#   00-checks.yml            (always)     실행 전 확인
+#   01-cleanup-wem12.yml     cleanup      WEM 1.2 삭제
+#   03-pg-hba.yml            pghba        WHPG pg_hba.conf 허용 추가
+#   04-clickhouse.yml        clickhouse   ClickHouse 설치
+#   05-state-database.yml    statedb      WEM 상태용 PostgreSQL 설치
+#   06-wem.yml               wem          WEM 1.4 설치
+#   07-host-agent.yml        agent        Host Agent + otelcol 설치
+#   08-otelcol-tune.yml      tune         otelcol 설정 조정
+#   09-query-logs.yml        querylogs    ClickHouse Coordinator Query Logs 객체
+#   10-summary.yml           (always)     서비스 상태 확인
+# =============================================================================
+
+- name: Replace WEM 1.2 with WEM 1.4
+  hosts: whpg_clusters
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  roles:
+    - warehouse-pg-wem

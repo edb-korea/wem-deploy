@@ -1,0 +1,40 @@
+# Managed by Ansible (role: warehouse-pg-wem)
+# WEM 1.4
+
+# --- 모니터링 대상 WHPG (coordinator 실 IP) ---
+WHPG_HOST={{ coordinator_ip }}
+WHPG_PORT={{ wem_whpg_port }}
+WHPG_DATABASE={{ wem_whpg_database }}
+WHPG_USER={{ wem_whpg_user }}
+WHPG_PASSWORD='{{ wem_whpg_password }}'
+WHPG_SSLMODE=disable
+
+# --- WEM 상태 DB (별도 PostgreSQL) ---
+WEM_HOST={{ wem_state_host }}
+WEM_PORT={{ wem_state_port }}
+WEM_DATABASE={{ wem_state_database }}
+WEM_USER={{ wem_state_user }}
+WEM_PASSWORD='{{ wem_state_password }}'
+WEM_SSLMODE=disable
+
+# --- ClickHouse (비밀번호는 URL 인코딩) ---
+CLICKHOUSE_URL='clickhouse://{{ clickhouse_user }}:{{ clickhouse_password | urlencode | replace('/', '%2F') }}@{{ wem_host_ip }}:{{ clickhouse_native_port }}'
+
+# --- Web ---
+PORT={{ wem_port }}
+WEM_COOKIE_SECRET='{{ wem_cookie_secret_value }}'
+# HTTPS가 아니므로 쿠키 허용 (HTTP 테스트 환경 전용)
+WEM_INSECURE_COOKIES={{ wem_insecure_cookies }}
+WEM_ADMIN_PASSWORD='{{ wem_admin_password }}'
+
+# --- 외부 노출용 메트릭 endpoint ---
+OTEL_PROMETHEUS_SCRAPE_ENDPOINT={{ wem_otel_prometheus_scrape_endpoint }}
+
+# Host Agent 자동 등록
+WEM_AGENT_JOIN_SECRET='{{ wem_join_secret_value }}'
+{% if wem_high_load_mode | length > 0 %}
+HIGH_LOAD_MODE={{ wem_high_load_mode }}
+{% endif %}
+{% for line in wem_extra_conf_lines %}
+{{ line }}
+{% endfor %}

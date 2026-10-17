@@ -1,0 +1,388 @@
+---
+# =============================================================================
+# 실행 중인 WarehousePG 에 접속해 inventory.yml 생성
+#
+#   ansible-playbook playbooks/generate_inventory.yml                              # inventory.yml 생성 (기존 파일은 백업)
+#   ansible-playbook playbooks/generate_inventory.yml -e whpg_coordinator=10.0.15.112   # 접속할 coordinator 를 이번만 바꿔 지정
+#   ansible-playbook playbooks/generate_inventory.yml -e inventory_output=/tmp/inv.yml  # 다른 경로에 미리 만들어 보기
+#
+# 동작
+#   1) inventory/cluster_vars.yml 의 whpg_coordinator_hosts 를 순서대로 접속해 본다
+#      (coordinator, standby 를 적어 두면 failover 로 standby 가 primary 가 된 경우도 찾음).
+#      항목은 "IP" 또는 { ip: "IP", hostname: "이름" }. SSH 접속은 항상 ip 로 하고,
+#      hostname 을 적으면 접속한 서버의 실제 hostname 과 비교해 다르면 중단한다 (다른 클러스터 오접속 방지).
+#      -e whpg_coordinator=<IP 또는 이름>[,<IP>...] 를 주면 그 값이 우선한다. 기존 inventory.yml 은 보지 않는다.
+#      SSH 접속 변수(ansible_user, ansible_port, ansible_ssh_private_key_file 등)도 cluster_vars.yml 에서 읽는다.
+#   2) gpadmin 으로 gp_segment_configuration 을 조회하고 그 서버의 /etc/hosts 를 읽는다.
+#        content = -1, role = p  -> whpg_role: coordinator
+#        content = -1, role = m  -> whpg_role: standby
+#        content >= 0            -> whpg_role: segment      (한 호스트는 위 순서로 하나의 역할만 가짐)
+#   3) gp_segment_configuration 의 address / hostname 을 /etc/hosts 에서 찾아 IP 를 정한다.
+#   4) 각 IP 에 SSH 로 접속해 실제 hostname 을 읽는다 (inventory 호스트 이름과 hostname 으로 사용).
+#      접속이 안 되면 /etc/hosts 에서 그 IP 의 첫 번째 이름을 쓰고 경고를 출력한다.
+#      hostname_alias 는 /etc/hosts 에서 그 IP 에 붙은 이름 중 hostname 이 아닌 첫 번째 이름.
+#   5) inventory/cluster_vars.yml 의 공통 변수와 합쳐 inventory.yml 을 쓴다.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1) 접속할 coordinator 후보
+# -----------------------------------------------------------------------------
+- name: Choose the coordinator to read cluster layout from
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    whpg_coordinator: ""
+    inventory_cluster_vars_file: "{{ playbook_dir | dirname }}/inventory/cluster_vars.yml"
+    # cluster_vars.yml 에서 가져와 임시 호스트(접속 확인용)에도 적용하는 SSH / become 변수
+    inventory_connection_vars:
+      - ansible_user
+      - ansible_port
+      - ansible_ssh_private_key_file
+      - ansible_ssh_common_args
+      - ansible_become_method
+      - ansible_become_user
+      - ansible_python_interpreter
+  tasks:
+    - name: Read inventory/cluster_vars.yml
+      ansible.builtin.include_vars:
+        file: "{{ inventory_cluster_vars_file }}"
+        name: _cv
+
+    - name: Collect coordinator candidates and connection settings
+      ansible.builtin.set_fact:
+        # 항목: "IP" 문자열 또는 { ip: "IP", hostname: "이름" } -> [{ip, hostname}] 로 정리 (hostname 은 확인용, 없으면 빈 값)
+        _gen_seed_entries: >-
+          {%- set src = (whpg_coordinator.split(',') if whpg_coordinator | length > 0 else (_cv.whpg_coordinator_hosts | default([]))) -%}
+          {%- set out = [] -%}
+          {%- for e in src -%}
+          {%- if e is mapping -%}
+          {%- set _ = out.append({'ip': (e.ip | default('') | string | trim), 'hostname': (e.hostname | default('') | string | trim)}) -%}
+          {%- elif (e | string | trim) | length > 0 -%}
+          {%- set _ = out.append({'ip': (e | string | trim), 'hostname': ''}) -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+        _gen_conn: "{{ _cv | dict2items | selectattr('key', 'in', inventory_connection_vars) | items2dict }}"
+
+    - name: Keep coordinator candidate IPs
+      ansible.builtin.set_fact:
+        _gen_seeds: "{{ _gen_seed_entries | map(attribute='ip') | select | unique | list }}"
+
+    - name: Check whpg_coordinator_hosts entries
+      ansible.builtin.assert:
+        that: _gen_seed_entries | rejectattr('ip') | list | length == 0
+        fail_msg: >-
+          whpg_coordinator_hosts 에 ip 가 없는 항목이 있습니다: {{ _gen_seed_entries | rejectattr('ip') | list }}.
+          "IP" 또는 { ip: "IP", hostname: "이름" } 형식으로 적으세요.
+        quiet: true
+
+    - name: Check that there is a coordinator to connect to
+      ansible.builtin.assert:
+        that: _gen_seeds | length > 0
+        fail_msg: >-
+          접속할 coordinator 를 알 수 없습니다. {{ inventory_cluster_vars_file }} 의 whpg_coordinator_hosts 에
+          coordinator(와 standby) IP 를 적거나 -e whpg_coordinator=<IP> 로 지정하세요.
+        quiet: true
+
+    - name: Show where to connect
+      ansible.builtin.debug:
+        msg: >-
+          접속 순서: {{ _gen_seed_entries | map(attribute='ip') | zip(_gen_seed_entries | map(attribute='hostname'))
+                        | map('join', ' ') | map('trim') | list }}
+          ({{ '-e whpg_coordinator' if whpg_coordinator | length > 0 else 'cluster_vars.yml 의 whpg_coordinator_hosts' }}),
+          접속 변수: {{ _gen_conn if _gen_conn else 'ansible 기본값' }}
+
+    - name: Add coordinator candidates
+      ansible.builtin.add_host:
+        name: "gen-seed-{{ item }}"
+        groups: _gen_seed
+        ansible_host: "{{ item }}"
+        _gen_seed_order: "{{ idx }}"
+        _gen_expected_hostname: "{{ (_gen_seed_entries | selectattr('ip', 'equalto', item) | map(attribute='hostname') | select | first) | default('') }}"
+        ansible_user: "{{ _gen_conn.ansible_user | default(omit) }}"
+        ansible_port: "{{ _gen_conn.ansible_port | default(omit) }}"
+        ansible_ssh_private_key_file: "{{ _gen_conn.ansible_ssh_private_key_file | default(omit) }}"
+        ansible_ssh_common_args: "{{ _gen_conn.ansible_ssh_common_args | default(omit) }}"
+        ansible_become_method: "{{ _gen_conn.ansible_become_method | default(omit) }}"
+        ansible_become_user: "{{ _gen_conn.ansible_become_user | default(omit) }}"
+        ansible_python_interpreter: "{{ _gen_conn.ansible_python_interpreter | default(omit) }}"
+      loop: "{{ _gen_seeds }}"
+      loop_control:
+        index_var: idx
+      changed_when: false
+
+# -----------------------------------------------------------------------------
+# 2) gp_segment_configuration 과 /etc/hosts 읽기
+# -----------------------------------------------------------------------------
+- name: Read gp_segment_configuration and /etc/hosts
+  hosts: _gen_seed
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+  vars:
+    whpg_unix_user: "gpadmin"
+    whpg_greenplum_path: "/usr/local/greenplum-db/greenplum_path.sh"
+  tasks:
+    - name: Query gp_segment_configuration (primary coordinator 에서만 성공)
+      ansible.builtin.shell:
+        cmd: |
+          cd /tmp
+          source {{ whpg_greenplum_path }} 2>/dev/null
+          psql -d postgres -v ON_ERROR_STOP=1 -At -F '|' -c "
+            SELECT content, role, hostname, address
+              FROM gp_segment_configuration
+             WHERE NOT pg_is_in_recovery()
+             ORDER BY content, role DESC"
+        executable: /bin/bash
+      become_user: "{{ whpg_unix_user }}"
+      register: _gen_segcfg
+      changed_when: false
+      failed_when: false
+
+    - name: Read /etc/hosts
+      ansible.builtin.slurp:
+        src: /etc/hosts
+      register: _gen_etc_hosts
+      failed_when: false
+
+    - name: Read actual hostname (whpg_coordinator_hosts 의 hostname 과 비교)
+      ansible.builtin.command: hostname
+      register: _gen_seed_hostname
+      changed_when: false
+      failed_when: false
+
+    # 임시 호스트(gen-seed-*)가 fact cache(.ansible_facts_cache)에 남지 않게 한다
+    - name: Clear fact cache of the temporary host
+      ansible.builtin.meta: clear_facts
+
+# -----------------------------------------------------------------------------
+# 3) 호스트 목록 정리 (역할, IP)
+# -----------------------------------------------------------------------------
+- name: Build host list
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    # whpg_coordinator_hosts 에 hostname 을 적은 서버는 실제 hostname 과 같은지 확인 (다른 클러스터 오접속 방지)
+    - name: Check hostname of the servers in whpg_coordinator_hosts
+      ansible.builtin.assert:
+        that: _gen_hostname_mismatch | length == 0
+        fail_msg: >-
+          whpg_coordinator_hosts 의 hostname 과 실제 서버 hostname 이 다릅니다 (다른 클러스터일 수 있음):
+          {{ _gen_hostname_mismatch | join(' / ') }}. cluster_vars.yml 의 ip / hostname 을 확인하세요.
+        quiet: true
+      vars:
+        _gen_hostname_mismatch: >-
+          {%- set out = [] -%}
+          {%- for h in groups['_gen_seed'] | default([]) -%}
+          {%- set exp = hostvars[h]._gen_expected_hostname | default('') -%}
+          {%- set r = hostvars[h]._gen_seed_hostname | default({}) -%}
+          {%- set act = (r.stdout | default('') | trim) if (r.rc | default(1)) == 0 else '' -%}
+          {%- if exp | length > 0 and act | length > 0 and act != exp and (act.split('.') | first) != exp -%}
+          {%- set _ = out.append(hostvars[h].ansible_host ~ ': 적은 값 ' ~ exp ~ ', 실제 ' ~ act) -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Pick the coordinator that answered
+      ansible.builtin.set_fact:
+        _gen_src: >-
+          {%- set ok = [] -%}
+          {%- for h in groups['_gen_seed'] | default([]) -%}
+          {%- set r = hostvars[h]._gen_segcfg | default({}) -%}
+          {%- if (r.rc | default(1)) == 0 and (r.stdout_lines | default([]) | length) > 0 and hostvars[h]._gen_etc_hosts.content is defined -%}
+          {%- set _ = ok.append({'seed': hostvars[h].ansible_host, 'order': hostvars[h]._gen_seed_order | int,
+                                 'rows': r.stdout_lines, 'etc_hosts': hostvars[h]._gen_etc_hosts.content | b64decode}) -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ (ok | sort(attribute='order') | first) | default({}) }}
+
+    - name: Check that gp_segment_configuration was read
+      ansible.builtin.assert:
+        that: _gen_src.rows is defined
+        fail_msg: >-
+          gp_segment_configuration 을 읽을 수 있는 primary coordinator 가 없습니다.
+          서버별 원인: {{ _gen_seed_reasons }}.
+          SSH 거부면 cluster_vars.yml 의 ansible_user / ansible_ssh_common_args(IdentityFile) 를,
+          모두 standby 면 whpg_coordinator_hosts 에 현재 primary coordinator 를 적거나 -e whpg_coordinator=<IP> 로 지정하세요.
+        quiet: true
+      vars:
+        # 서버마다 실패 이유를 한 줄로: SSH 실패 / recovery 상태(standby) / psql 오류
+        _gen_seed_reasons: >-
+          {%- set out = [] -%}
+          {%- for h in groups['_gen_seed'] | default([]) -%}
+          {%- set r = hostvars[h]._gen_segcfg | default({}) -%}
+          {%- if r.unreachable | default(false) -%}
+          {%- set why = 'SSH 실패 - ' ~ ((r.msg | default('')) | regex_replace('(?s)^.*?: ([^:]*@[^:]+: )?', '') | regex_replace('\\s+', ' ') | truncate(120)) -%}
+          {%- elif ((r.rc | default(1)) == 0 and (r.stdout_lines | default([]) | length) == 0) or ('recovery mode' in (r.stderr | default(''))) -%}
+          {%- set why = 'recovery 상태(standby) - primary 가 아님' -%}
+          {%- elif (r.rc | default(1)) != 0 -%}
+          {%- set why = 'psql 실패 - ' ~ ((r.stderr | default(r.msg | default(''))) | regex_replace('\\s+', ' ') | truncate(120)) -%}
+          {%- else -%}
+          {%- set why = '/etc/hosts 를 읽지 못함' -%}
+          {%- endif -%}
+          {%- set _ = out.append(hostvars[h].ansible_host ~ ': ' ~ why) -%}
+          {%- endfor -%}
+          {{ out | join(' / ') }}
+
+    # /etc/hosts: 이름 -> IP (먼저 나온 줄 우선), IP -> 이름 목록
+    - name: Parse /etc/hosts and gp_segment_configuration
+      ansible.builtin.set_fact:
+        _gen_name2ip: >-
+          {%- set m = {} -%}
+          {%- for line in _gen_src.etc_hosts.splitlines() -%}
+          {%- set f = (line | regex_replace('#.*$', '')).split() -%}
+          {%- if f | length > 1 -%}{%- for n in f[1:] if n not in m -%}{%- set _ = m.update({n: f[0]}) -%}{%- endfor -%}{%- endif -%}
+          {%- endfor -%}
+          {{ m }}
+        _gen_ip2names: >-
+          {%- set m = {} -%}
+          {%- for line in _gen_src.etc_hosts.splitlines() -%}
+          {%- set f = (line | regex_replace('#.*$', '')).split() -%}
+          {%- if f | length > 1 -%}{%- set _ = m.update({f[0]: (m[f[0]] | default([])) + f[1:]}) -%}{%- endif -%}
+          {%- endfor -%}
+          {{ m }}
+        # 행: content|role|hostname|address  -> 호스트(address)별 역할 (coordinator > standby > segment)
+        _gen_rows: >-
+          {%- set out = [] -%}
+          {%- for line in _gen_src.rows -%}
+          {%- set f = line.split('|') -%}
+          {%- if f | length == 4 -%}
+          {%- set _ = out.append({'content': f[0] | int, 'role': f[1], 'hostname': f[2], 'address': f[3],
+                                  'whpg_role': ('coordinator' if f[1] == 'p' else 'standby') if (f[0] | int) == -1 else 'segment'}) -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Resolve each cluster host to an IP
+      ansible.builtin.set_fact:
+        _gen_hosts: >-
+          {%- set rank = {'coordinator': 0, 'standby': 1, 'segment': 2} -%}
+          {%- set by_ip = {} -%}
+          {%- set order = [] -%}
+          {%- for r in _gen_rows | sort(attribute='content') -%}
+          {%- set ip = _gen_name2ip[r.address] | default(_gen_name2ip[r.hostname] | default(r.address if (r.address | regex_search('^[0-9.]+$|:')) else '')) -%}
+          {%- set key = ip if ip else r.address -%}
+          {%- if key not in by_ip -%}
+          {%- set _ = order.append(key) -%}
+          {%- set _ = by_ip.update({key: {'ip': ip, 'gp_names': [r.hostname, r.address] | unique, 'whpg_role': r.whpg_role}}) -%}
+          {%- else -%}
+          {%- set cur = by_ip[key] -%}
+          {%- set _ = cur.update({'gp_names': (cur.gp_names + [r.hostname, r.address]) | unique}) -%}
+          {%- if rank[r.whpg_role] < rank[cur.whpg_role] -%}{%- set _ = cur.update({'whpg_role': r.whpg_role}) -%}{%- endif -%}
+          {%- endif -%}
+          {%- endfor -%}
+          {{ order | map('extract', by_ip) | list }}
+
+    - name: Check that every host has an IP in /etc/hosts
+      ansible.builtin.assert:
+        that:
+          - _gen_hosts | rejectattr('ip') | list | length == 0
+          - _gen_hosts | selectattr('whpg_role', 'equalto', 'coordinator') | list | length == 1
+        fail_msg: >-
+          {{ _gen_src.seed }} 의 /etc/hosts 에서 IP 를 찾지 못한 호스트가 있습니다:
+          {{ _gen_hosts | rejectattr('ip') | map(attribute='gp_names') | list }}
+        quiet: true
+
+    - name: Add cluster hosts to read their actual hostname
+      ansible.builtin.add_host:
+        name: "gen-probe-{{ item.ip }}"
+        groups: _gen_probe
+        ansible_host: "{{ item.ip }}"
+        ansible_user: "{{ _gen_conn.ansible_user | default(omit) }}"
+        ansible_port: "{{ _gen_conn.ansible_port | default(omit) }}"
+        ansible_ssh_private_key_file: "{{ _gen_conn.ansible_ssh_private_key_file | default(omit) }}"
+        ansible_ssh_common_args: "{{ _gen_conn.ansible_ssh_common_args | default(omit) }}"
+        ansible_python_interpreter: "{{ _gen_conn.ansible_python_interpreter | default(omit) }}"
+      loop: "{{ _gen_hosts }}"
+      loop_control:
+        label: "{{ item.ip }}"
+      changed_when: false
+
+# -----------------------------------------------------------------------------
+# 4) 각 서버의 실제 hostname
+# -----------------------------------------------------------------------------
+- name: Read actual hostname of each host
+  hosts: _gen_probe
+  gather_facts: false
+  ignore_unreachable: true
+  tasks:
+    - name: Read hostname
+      ansible.builtin.command: hostname
+      register: _gen_hostname
+      changed_when: false
+      failed_when: false
+
+    - name: Clear fact cache of the temporary host
+      ansible.builtin.meta: clear_facts
+
+# -----------------------------------------------------------------------------
+# 5) inventory.yml 쓰기
+# -----------------------------------------------------------------------------
+- name: Write inventory.yml
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # 프로젝트 최상위 디렉터리 (이 playbook 은 playbooks/ 아래에 있다)
+    inventory_project_dir: "{{ playbook_dir | dirname }}"
+    inventory_cluster_vars_file: "{{ inventory_project_dir }}/inventory/cluster_vars.yml"
+    inventory_template: "{{ inventory_project_dir }}/inventory/inventory.yml.j2"
+    inventory_output: "{{ inventory_project_dir }}/inventory.yml"
+    # whpg_clusters 아래 클러스터 그룹 이름
+    inventory_cluster_group: "cluster_whpg"
+  tasks:
+    - name: Decide inventory name / hostname / alias for each host
+      ansible.builtin.set_fact:
+        _gen_entries: >-
+          {%- set rank = {'coordinator': 0, 'standby': 1, 'segment': 2} -%}
+          {%- set out = [] -%}
+          {%- for h in _gen_hosts -%}
+          {%- set pr = hostvars['gen-probe-' ~ h.ip]._gen_hostname | default({}) -%}
+          {%- set etc_names = _gen_ip2names[h.ip] | default([]) -%}
+          {%- set actual = (pr.stdout | default('') | trim) if (pr.rc | default(1)) == 0 else '' -%}
+          {%- set hn = actual if actual else (etc_names | first | default(h.gp_names | first)) -%}
+          {%- set alias = ((etc_names + h.gp_names) | reject('equalto', hn) | list | first) | default(hn) -%}
+          {%- set _ = out.append({'name': hn, 'ip': h.ip, 'hostname': hn, 'alias': alias, 'whpg_role': h.whpg_role,
+                                  'rank': rank[h.whpg_role], 'source': 'actual' if actual else 'etc_hosts', 'gp_names': h.gp_names}) -%}
+          {%- endfor -%}
+          {{ out | sort(attribute='rank') }}
+
+    - name: Warn about hosts whose actual hostname could not be read
+      ansible.builtin.debug:
+        msg: "SSH 로 실제 hostname 을 읽지 못해 /etc/hosts 의 이름을 썼습니다: {{ _gen_entries | selectattr('source', 'equalto', 'etc_hosts') | map(attribute='ip') | list }}"
+      when: _gen_entries | selectattr('source', 'equalto', 'etc_hosts') | list | length > 0
+
+    - name: Show discovered cluster
+      ansible.builtin.debug:
+        msg: >-
+          {%- set out = ['source: ' ~ _gen_src.seed ~ ' (gp_segment_configuration, /etc/hosts)',
+                         'whpg_role | inventory 이름(=hostname) | IP | hostname_alias | gp_segment_configuration 이름'] -%}
+          {%- for e in _gen_entries -%}
+          {%- set _ = out.append([e.whpg_role, e.name, e.ip, e.alias, e.gp_names | join(',')] | join(' | ')) -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: Write inventory.yml (기존 파일은 inventory.yml.<날짜> 로 백업)
+      ansible.builtin.template:
+        src: "{{ inventory_template }}"
+        dest: "{{ inventory_output }}"
+        mode: "0644"
+        backup: true
+        validate: "ansible-inventory -i %s --list"
+      vars:
+        _gen_time: "{{ lookup('ansible.builtin.pipe', 'date +%F_%T') }}"
+      register: _inv_write
+
+    - name: Show generated inventory
+      ansible.builtin.command:
+        argv: [ansible-inventory, -i, "{{ inventory_output }}", --graph]
+      register: _inv_graph
+      changed_when: false
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: >-
+          {{ ['written: ' ~ inventory_output ~ ((' (backup: ' ~ _inv_write.backup_file ~ ')') if _inv_write.backup_file is defined else '')]
+             + _inv_graph.stdout_lines }}

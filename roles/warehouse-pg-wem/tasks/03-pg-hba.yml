@@ -1,0 +1,32 @@
+---
+# WHPG pg_hba.conf 에 클러스터 노드 접속 허용
+# tag: pghba
+- name: Allow cluster nodes in pg_hba.conf (coordinator / standby)
+  ansible.builtin.blockinfile:
+    path: "{{ whpg_coordinator_data_directory }}/pg_hba.conf"
+    marker: "# {mark} ANSIBLE MANAGED: WEM 1.4"
+    block: |
+      # coordinator 의 otelcol sqlquery/whpg 가 127.0.0.1 로 접속
+      host all {{ wem_whpg_user }} 127.0.0.1/32 scram-sha-256
+      {% for h in groups['whpg_clusters'] %}
+      host all {{ wem_whpg_user }} {{ hostvars[h].ip_address }}/32 scram-sha-256
+      {% endfor %}
+    owner: gpadmin
+    group: gpadmin
+  register: _pg_hba
+  when:
+    - wem_manage_pg_hba | bool
+    - whpg_role in ['coordinator', 'standby']
+
+- name: Reload coordinator configuration
+  ansible.builtin.shell:
+    cmd: |
+      source /usr/local/greenplum-db/greenplum_path.sh
+      export COORDINATOR_DATA_DIRECTORY={{ whpg_coordinator_data_directory }}
+      gpstop -u
+    executable: /bin/bash
+  become_user: gpadmin
+  when:
+    - inventory_hostname == coordinator_host
+    - wem_manage_pg_hba | bool
+    - _pg_hba is changed

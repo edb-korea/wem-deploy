@@ -1,0 +1,32 @@
+# =============================================================================
+# WarehousePG 클러스터 공통 변수 (inventory.yml 의 whpg_clusters.children.<클러스터>.vars 로 들어간다)
+#   호스트 목록은 ansible-playbook playbooks/generate_inventory.yml 이 WarehousePG 의 gp_segment_configuration 과
+#   /etc/hosts 에서 읽어 inventory.yml 을 만든다. 이 파일을 고친 뒤에도 generate_inventory.yml 을 다시 실행한다.
+#   WEM 관련 변수(wem_*)도 여기에 적으면 roles/warehouse-pg-wem/defaults/main.yml 의 기본값보다 우선한다.
+# =============================================================================
+
+# --- inventory.yml 생성 시 접속할 서버 (generate_inventory.yml) ---
+# gp_segment_configuration 을 읽기 위해 이 순서로 접속한다. VIP 와 coordinator 를 적어 두면 순서대로 처리한다. 
+whpg_coordinator_hosts:
+#    - { ip: "10.0.8.209",  hostname: "whpg-vip" }  # VIP
+#    - { ip: "10.0.8.209",  hostname: "whpg-cdw" }  # coordinator
+    - { ip: "10.0.3.8",  hostname: "whpg-vip" }  # VIP
+    - { ip: "10.0.3.8",  hostname: "whpg-m" }  # coordinator
+
+# --- SSH 접속 (선택. 적지 않으면 ansible 을 실행한 계정과 ~/.ssh 기본 키, sudo 로 root) ---
+# generate_inventory.yml 의 접속과 생성된 inventory.yml (WEM 설치 / 삭제) 에 함께 적용된다.
+# ansible_user: "ec2-user"
+# ansible_port: 22
+#
+# SSH 키: 서버(클러스터)마다 허용하는 키가 다르면 IdentityFile 을 여러 개 적는다. ssh 가 적힌 순서로 시도한다.
+#   ansible_ssh_private_key_file(-i)은 키 하나만 쓰고 ~/.ssh 기본 키도 시도하지 않으므로, 키가 섞인 환경에서는 쓰지 않는다.
+ansible_ssh_common_args: "-o IdentityFile=~/.ssh/id_rsa -o IdentityFile=~/.ssh/id_whpg_rsa"
+
+# --- coordinator 데이터 디렉터리 (pg_hba.conf 위치, gpstop -u 에 사용) ---
+whpg_coordinator_data_directory: "/data/coordinator/gpseg-1"
+
+# --- 클러스터 기본 데이터베이스 (WEM 삭제 시 보호 목록 wem_protected_databases 에 포함) ---
+whpg_default_database: "gpadmin"
+
+# --- Coordinator VIP (선택, wem_use_vip=true 일 때 DB 메트릭을 이 주소로 수집) ---
+whpg_vip_cidr: "10.0.8.209/24"
