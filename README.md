@@ -11,11 +11,13 @@ WEM 1.2 가 있으면 지우고 1.4 로 전환합니다. WHPG 자체의 설치�
 | 하고 싶은 일 | 명령 (이 디렉터리에서 실행) |
 |---|---|
 | inventory.yml 생성 (WHPG 에서 읽기) | `ansible-playbook playbooks/generate_inventory.yml` |
-| **WEM 1.4 설치** (1.2 가 있으면 삭제 후) | `ansible-playbook playbooks/run_wem_1.2_to_1.4.yml` |
-| 위와 같고 standby 의 DB 메트릭 수집이 VIP 로 접속 | `ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e wem_use_vip=true` |
-| **WEM 1.4 삭제** | `ansible-playbook playbooks/run_wem_1.4_remove.yml` |
+| **WEM 1.4 설치** (1.2 가 있으면 삭제 후) | `ansible-playbook playbooks/wem_deploy.yml` |
+| 위와 같고 standby 의 DB 메트릭 수집이 VIP 로 접속 | `ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true` |
+| 관련 rpm 의 설치 / repo 최신 버전 확인만 | `ansible-playbook playbooks/wem_deploy.yml -t upgrade --check` |
+| **관련 rpm 을 repo 최신 버전으로 업그레이드** | `ansible-playbook playbooks/wem_deploy.yml -t upgrade` |
+| **WEM 1.4 삭제** | `ansible-playbook playbooks/wem_uninstall.yml` |
 
-`run_wem_1.2_to_1.4.yml` 과 `run_wem_1.4_remove.yml` 은 **확인 질문 없이 바로 삭제를 시작**합니다. 실행하기 전에 [10. 운영 환경 적용 전 점검](#10-운영-환경-적용-전-점검)을 확인합니다.
+`wem_deploy.yml` 과 `wem_uninstall.yml` 은 **확인 질문 없이 바로 삭제를 시작**합니다. 실행하기 전에 [10. 운영 환경 적용 전 점검](#10-운영-환경-적용-전-점검)을 확인합니다.
 
 ## 1. 디렉터리 구성
 
@@ -28,8 +30,8 @@ samsung_ansible/
 │   └── inventory.yml.j2         # inventory.yml 템플릿
 ├── playbooks/
 │   ├── generate_inventory.yml   # WHPG 의 gp_segment_configuration + /etc/hosts + cluster_vars.yml -> inventory.yml
-│   ├── run_wem_1.2_to_1.4.yml   # WEM 1.2 삭제 + 1.4 설치
-│   └── run_wem_1.4_remove.yml   # WEM 1.4 삭제
+│   ├── wem_deploy.yml           # WEM 1.2 삭제 + 1.4 설치
+│   └── wem_uninstall.yml        # WEM 1.4 삭제
 └── roles/
     └── warehouse-pg-wem/        # WEM 설치 / 삭제 role (11절)
 ```
@@ -127,7 +129,7 @@ WEM 은 **standby 가 있으면 standby, 없으면 coordinator** 에 설치됩�
 ### 3-1. WEM 1.4 설치 (WEM 1.2 가 있으면 삭제 후)
 
 ```bash
-ansible-playbook playbooks/run_wem_1.2_to_1.4.yml
+ansible-playbook playbooks/wem_deploy.yml
 ```
 
 수행 순서는 다음과 같습니다. 각 단계의 이름이 [7. 단계별 실행](#7-단계별-실행-tags)의 tag 입니다.
@@ -143,10 +145,29 @@ ansible-playbook playbooks/run_wem_1.2_to_1.4.yml
 9. ClickHouse Coordinator Query Logs 객체 생성
 10. 서비스 상태 확인
 
-### 3-2. WEM 1.4 삭제
+### 3-2. 관련 rpm 업그레이드
 
 ```bash
-ansible-playbook playbooks/run_wem_1.4_remove.yml
+ansible-playbook playbooks/wem_deploy.yml -t upgrade --check   # 버전 확인만
+ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 확인 후 업그레이드
+```
+
+`-t upgrade` 를 지정할 때만 실행됩니다(`never` tag). 일반 설치 실행(tag 없음)에는 포함되지 않습니다.
+
+1. 각 노드에서 repo 메타데이터를 새로 받고, 패키지별 설치 버전과 repo 최신 버전, 업그레이드 대상 여부를 출력
+2. WEM host: ClickHouse(`edb-clickhouse-server`, `edb-clickhouse-client`) → WEM(`whpg-enterprise-manager`) 순으로 업그레이드하고, 올라간 서비스만 재시작
+3. 모든 노드: `edb-acp-host-agent`, `edb-otelcol` 업그레이드 후, 올라간 노드만 한 대씩 `acp-host-agent`, `edb-otelcol` 재시작
+4. 업그레이드 후 버전 출력
+
+- 이미 설치된 패키지만 올립니다(새로 설치하지 않음). 대상 목록은 `wem_upgrade_packages_wem_host`, `wem_upgrade_packages_all_hosts` 로 바꿉니다.
+- `wem.conf`, `config.yaml`, `edb-otelcol.conf` 는 rpm 의 `%config(noreplace)` 이고 `config_local.yaml` 은 rpm 소유가 아니므로 설정은 유지됩니다.
+- **repo 의 최신 버전으로 올라가므로 마이너 버전이 바뀔 수 있습니다** (예: WEM 1.4.0 → 1.5.0). 먼저 `--check` 로 대상 버전을 확인합니다.
+- 업그레이드한 뒤에도 일반 설치 실행은 WEM 을 `wem14_package` 의 고정 버전으로 내리지 않습니다(설치된 버전이 같거나 높으면 설치 건너뜀).
+
+### 3-3. WEM 1.4 삭제
+
+```bash
+ansible-playbook playbooks/wem_uninstall.yml
 ```
 
 WHPG 본체, WEM 1.2(Prometheus/Loki/Alloy), `/etc/edb/pgaa` 는 지우지 않습니다.
@@ -167,7 +188,7 @@ WHPG 본체, WEM 1.2(Prometheus/Loki/Alloy), `/etc/edb/pgaa` 는 지우지 않�
 **방법 1. 실행할 때 `-e` 로 지정 (한 번만 바꿀 때)**
 
 ```bash
-ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e wem_port=8090 -e wem_use_vip=true
+ansible-playbook playbooks/wem_deploy.yml -e wem_port=8090 -e wem_use_vip=true
 ```
 
 **방법 2. 파일로 지정 (여러 값을 바꿀 때)**
@@ -183,7 +204,7 @@ wem_state_password: "새 비밀번호"
 ```
 
 ```bash
-ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e @my_vars.yml
+ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml
 ```
 
 **방법 3. `inventory/cluster_vars.yml` 에 고정 (매번 같은 값을 쓸 때)**
@@ -195,7 +216,7 @@ ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e @my_vars.yml
 주의할 점은 다음과 같습니다.
 
 - 비밀번호는 **설치할 때** 적용됩니다. WEM `admin` 의 비밀번호(`wem_admin_password`)는 최초 설정에만 쓰이므로, 설치 후에 값만 바꿔서 다시 실행해도 로그인 비밀번호는 바뀌지 않습니다.
-- 값을 바꿔서 다시 설치할 때는 `run_wem_1.4_remove.yml` 로 지운 뒤 설치합니다.
+- 값을 바꿔서 다시 설치할 때는 `wem_uninstall.yml` 로 지운 뒤 설치합니다.
 - `true` / `false` 는 `-e wem_use_vip=true` 처럼 따옴표 없이 적습니다.
 
 ## 5. 자주 바꾸는 변수
@@ -281,6 +302,7 @@ ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e @my_vars.yml
 | `wem_unix_group` | `gpadmin` | `wem.conf` 의 그룹 |
 | `wem_insecure_cookies` | `"1"` | HTTP 로 접속하므로 쿠키 허용. 웹 포털 HTTPS 설정 파라미터는 공식 설정 참조에 없어 구성하지 않음 |
 | `wem_high_load_mode` | `""` | 대규모 환경이면 `"true"` (`HIGH_LOAD_MODE`) |
+| `wem_pool_max_conns` | `"40"` | WEM DB 연결 풀 최대 연결 수 (`WEM_POOL_MAX_CONNS`). `""` 이면 넣지 않음 |
 | `wem_otel_prometheus_scrape_endpoint` | `0.0.0.0:8889` | 외부 Prometheus 가 메트릭을 가져가는 주소 |
 | `wem_extra_conf_lines` | `[]` | `wem.conf` 에 그대로 추가할 줄 목록 |
 | `wem_manage_firewall` | `true` | firewalld 가 실행 중이면 WEM, Agent, ClickHouse 포트를 연다 |
@@ -309,7 +331,7 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 2. `08-otelcol-tune`: WEM 이 `config.yaml` 을 배포한 뒤 `edb-otelcol validate` 로 병합 결과를 검사하고,
    바뀐 내용(standby 의 sqlquery 추가, 변수 변경 등)이 있을 때만 otelcol 을 재시작합니다.
 
-- 모든 노드: `file_log` (`start_at: end`, `poll_interval`), `batch` 값 조정
+- 모든 노드: `file_log` (`start_at: end`, `poll_interval`) 조정
 - coordinator failover 대비 (가이드 "주의 2", `wem_sqlquery_on_standby: true` 이고 standby 가 있을 때):
   - 2-1: coordinator 의 `/etc/edb/otelcol/whpg_db_metrics.yaml` 을 standby 로 복사
   - 2-2: coordinator 의 `config_local.yaml` 에 `service.pipelines.metrics.receivers: [host_metrics]` 를 넣어 `sqlquery/whpg` 를 제외
@@ -327,9 +349,6 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 | `otelcol_checkpoint_dir` | `/var/lib/edb/otelcol/checkpoint` | 로그 읽기 위치 저장소 |
 | `otelcol_reset_checkpoint` | `false` | `true` 면 08 단계에서 otelcol 을 재시작할 때 checkpoint 를 초기화 (보통 필요 없음) |
 | `agent_approval_wait_seconds` | `240` | WEM 이 otelcol 설정을 배포할 때까지 기다리는 최대 시간(초) |
-| `otelcol_batch_send_batch_size` | `8192` | `batch` 처리기의 `send_batch_size` |
-| `otelcol_batch_send_batch_max_size` | `16384` | `batch` 처리기의 `send_batch_max_size` |
-| `otelcol_batch_timeout` | `5s` | `batch` 처리기의 `timeout` |
 | `otelcol_filelog_poll_interval` | `1s` | 로그 수집기의 `poll_interval` (`start_at` 은 `end`) |
 | `otelcol_whpg_queries_file` | `/etc/edb/otelcol/whpg_db_metrics.yaml` | coordinator 에서 standby 로 복사하는 쿼리 정의 (주의 2-1) |
 | `otelcol_sqlquery_host` | `wem_use_vip` 가 true 면 VIP, 아니면 coordinator IP | standby `sqlquery/whpg` 의 접속 주소 |
@@ -352,7 +371,14 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 | `coordinator_query_logs_ttl_days` | `90` | 상태 테이블 TTL(일) |
 | `coordinator_query_logs_wait_seconds` | `300` | `otel_logs` 테이블이 생길 때까지 기다리는 최대 시간(초). 초과하면 건너뜀 |
 
-### 6-8. WEM 1.4 삭제 (`remove-wem14.yml`)
+### 6-8. rpm 업그레이드 (`upgrade.yml`)
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `wem_upgrade_packages_wem_host` | `whpg-enterprise-manager`, `edb-clickhouse-server`, `edb-clickhouse-client` | WEM host 에서 최신 버전으로 올릴 패키지 |
+| `wem_upgrade_packages_all_hosts` | `edb-acp-host-agent`, `edb-otelcol` | 모든 노드에서 최신 버전으로 올릴 패키지 |
+
+### 6-9. WEM 1.4 삭제 (`remove-wem14.yml`)
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -379,11 +405,12 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 | `agent` | `07-host-agent.yml` | Host Agent, otelcol 설치, otelcol 조정 선적용, 자동 승인 |
 | `tune` | `08-otelcol-tune.yml` | otelcol 설정 검사와 반영 |
 | `querylogs` | `09-query-logs.yml` | ClickHouse Coordinator Query Logs 객체 |
-| `remove` | `remove-wem14.yml` | WEM 1.4 삭제 (`run_wem_1.4_remove.yml` 에서만) |
+| `upgrade` | `upgrade.yml` | 관련 rpm 을 repo 최신 버전으로 업그레이드 (`-t upgrade` 를 지정할 때만) |
+| `remove` | `remove-wem14.yml` | WEM 1.4 삭제 (`wem_uninstall.yml` 에서만) |
 
 ```bash
-ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -t tune,querylogs
-ansible-playbook playbooks/run_wem_1.2_to_1.4.yml --list-tasks            # 실행될 태스크 목록만 확인
+ansible-playbook playbooks/wem_deploy.yml -t tune,querylogs
+ansible-playbook playbooks/wem_deploy.yml --list-tasks            # 실행될 태스크 목록만 확인
 ```
 
 조합할 때 주의할 점입니다.
@@ -475,8 +502,9 @@ roles/warehouse-pg-wem/
 │   ├── 08-otelcol-tune.yml      # tune        otelcol 설정 검사 (WEM 배포 후 validate, 변경 시 재시작)
 │   ├── otelcol-local-config.yml # (07, 08 에서 호출) config_local.yaml + edb-otelcol.conf 적용
 │   ├── 09-query-logs.yml        # querylogs   Coordinator Query Logs 객체
+│   ├── upgrade.yml              # upgrade     관련 rpm 최신 버전으로 업그레이드 (-t upgrade 지정 시에만)
 │   ├── 10-summary.yml           # (always)    서비스 상태 확인
-│   └── remove-wem14.yml         # remove      WEM 1.4 삭제 (run_wem_1.4_remove.yml 이 호출)
+│   └── remove-wem14.yml         # remove      WEM 1.4 삭제 (wem_uninstall.yml 이 호출)
 ├── files/
 │   └── query_logs_*.sql         # Coordinator Query Logs 객체 SQL
 └── templates/
@@ -484,7 +512,7 @@ roles/warehouse-pg-wem/
     └── otelcol_config_local.yaml.j2  # otelcol override (config_local.yaml)
 ```
 
-`run_wem_1.4_remove.yml` 은 같은 role 에서 `00-checks.yml` 과 `remove-wem14.yml` 만 골라서 실행합니다(`tasks_from`).
+`wem_uninstall.yml` 은 같은 role 에서 `00-checks.yml` 과 `remove-wem14.yml` 만 골라서 실행합니다(`tasks_from`).
 
 ## 12. 알려진 제약과 검증 현황
 

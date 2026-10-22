@@ -1,5 +1,5 @@
 ---
-# WEM 1.2 삭제 후 WEM 1.4 구성. run_wem_1.2_to_1.4.yml 이 이 파일을 실행한다.
+# WEM 1.2 삭제 후 WEM 1.4 구성. wem_deploy.yml 이 이 파일을 실행한다.
 # 단계별 tag 로 일부만 실행할 수 있다 (예: -t tune). 자세한 내용은 ansible/README.md 를 참고한다.
 
 # 실행 전 확인 (OS, VIP 활성 여부, wem_use_vip 조건, 배치 출력)
@@ -46,6 +46,11 @@
 - name: "09-query-logs"
   ansible.builtin.import_tasks: 09-query-logs.yml
   tags: [querylogs]
+
+# WEM 관련 RPM 을 repo 최신 버전으로 업그레이드 (-t upgrade 를 지정할 때만)
+- name: "upgrade"
+  ansible.builtin.import_tasks: upgrade.yml
+  tags: [upgrade, never]
 
 # 서비스 상태 확인
 - name: "10-summary"

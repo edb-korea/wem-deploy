@@ -2,9 +2,11 @@
 # =============================================================================
 # WEM 1.2 삭제 후 WEM 1.4 구성 (원샷)
 #
-#   ansible-playbook playbooks/run_wem_1.2_to_1.4.yml                      # 기본
-#   ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e wem_use_vip=true  # DB 메트릭을 VIP 로 수집 (HA 환경)
-#   ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -t tune              # 일부 단계만 (아래 tags)
+#   ansible-playbook playbooks/wem_deploy.yml                      # 기본
+#   ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true  # DB 메트릭을 VIP 로 수집 (HA 환경)
+#   ansible-playbook playbooks/wem_deploy.yml -t tune              # 일부 단계만 (아래 tags)
+#   ansible-playbook playbooks/wem_deploy.yml -t upgrade --check   # 관련 RPM 의 설치 / repo 최신 버전 확인만
+#   ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 관련 RPM 을 repo 최신 버전으로 업그레이드
 #
 # 이 playbook 은 role 하나(warehouse-pg-wem)만 호출한다.
 # 단계별 작업은 roles/warehouse-pg-wem/tasks/ 의 파일로 나뉘어 있고, 변수는 defaults/main.yml 에 있다.
@@ -20,6 +22,7 @@
 #   07-host-agent.yml        agent        Host Agent + otelcol 설치
 #   08-otelcol-tune.yml      tune         otelcol 설정 조정
 #   09-query-logs.yml        querylogs    ClickHouse Coordinator Query Logs 객체
+#   upgrade.yml              upgrade      관련 RPM 최신 버전으로 업그레이드 (-t upgrade 지정 시에만)
 #   10-summary.yml           (always)     서비스 상태 확인
 # =============================================================================
 

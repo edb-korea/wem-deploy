@@ -2,7 +2,7 @@
 # =============================================================================
 # WEM 1.4 및 대응 구성요소 삭제 (테스트 초기화용)
 #
-#   ansible-playbook playbooks/run_wem_1.4_remove.yml
+#   ansible-playbook playbooks/wem_uninstall.yml
 #
 # 삭제 대상: WEM 1.4, ClickHouse, WEM 상태용 PostgreSQL, Host Agent, otelcol,
 #            WHPG pg_hba.conf 의 WEM 1.4 블록, wem / wemadmin role,
