@@ -19,7 +19,9 @@
         l=$(dnf -q repoquery --available --latest-limit 1 --qf '%{version}-%{release}' "$p" 2>/dev/null | tail -n1)
         u=$(dnf -q repoquery --upgrades --latest-limit 1 --qf '%{version}-%{release}' "$p" 2>/dev/null | tail -n1)
         echo "$p: 설치=$i repo 최신=${l:-(없음)}${u:+  -> 업그레이드 대상}"
+        [ -n "$u" ] && echo "UPG $p $i -> $u"
       done
+      true
     executable: /bin/bash
   register: _upg_before
   changed_when: false
@@ -27,7 +29,12 @@
 
 - name: Show upgrade plan
   ansible.builtin.debug:
-    msg: "{{ [inventory_hostname] + _upg_before.stdout_lines }}"
+    msg: "{{ [inventory_hostname] + (_upg_before.stdout_lines | reject('match', '^UPG ') | list) }}"
+
+# 10-summary 의 Summary 에 모든 노드의 업그레이드 대상을 모아 보여 준다
+- name: Remember upgrade targets for the summary
+  ansible.builtin.set_fact:
+    _upg_targets: "{{ _upg_before.stdout_lines | select('match', '^UPG ') | map('regex_replace', '^UPG ', '') | list }}"
 
 # ---------------------------------------------------------------------------
 # WEM host: ClickHouse → WEM

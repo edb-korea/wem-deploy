@@ -80,7 +80,7 @@ ansible-playbook playbooks/wem_deploy.yml -t upgrade --check   # 1) 설치 버�
 ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 2) 업그레이드, 올라간 서비스만 재시작
 ```
 
-1) 의 `Show upgrade plan` 출력에서 `-> 업그레이드 대상` 으로 표시된 패키지와 버전을 확인한 뒤 2) 를 실행합니다.
+1) 의 마지막 `Summary` 에 모든 노드의 업그레이드 대상(`호스트: 패키지 현재 버전 -> 최신 버전`)이 모여 나옵니다. 확인한 뒤 2) 를 실행합니다.
 마이너 버전이 바뀌는 경우(예: WEM 1.4.0 → 1.5.0)에는 릴리스 노트를 먼저 확인합니다.
 업그레이드 후에는 5단계와 같이 서비스 상태와 Host Agents 화면을 확인합니다.
 
@@ -244,6 +244,7 @@ ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 확인 후 업�
 2. WEM host: ClickHouse(`edb-clickhouse-server`, `edb-clickhouse-client`) → WEM(`whpg-enterprise-manager`) 순으로 업그레이드하고, 올라간 서비스만 재시작
 3. 모든 노드: `edb-acp-host-agent`, `edb-otelcol` 업그레이드 후, 올라간 노드만 한 대씩 `acp-host-agent`, `edb-otelcol` 재시작
 4. 업그레이드 후 버전 출력
+5. 마지막 `Summary` 에 모든 노드의 업그레이드 대상(`--check`) 또는 업그레이드한 패키지를 모아서 출력. 대상이 없으면 `없음`
 
 - 이미 설치된 패키지만 올립니다(새로 설치하지 않음). 대상 목록은 `wem_upgrade_packages_wem_host`, `wem_upgrade_packages_all_hosts` 로 바꿉니다.
 - `wem.conf`, `config.yaml`, `edb-otelcol.conf` 는 rpm 의 `%config(noreplace)` 이고 `config_local.yaml` 은 rpm 소유가 아니므로 설정은 유지됩니다.
