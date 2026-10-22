@@ -1,6 +1,6 @@
 ---
 # =============================================================================
-# WEM 1.2 삭제 후 WEM 1.4 구성 (원샷)
+# WEM 1.2/1.3 삭제 후 WEM 1.4 구성 (원샷)
 #
 #   ansible-playbook playbooks/wem_deploy.yml                      # 기본
 #   ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true  # DB 메트릭을 VIP 로 수집 (HA 환경)
@@ -14,7 +14,7 @@
 #
 #   tasks 파일               tag          내용
 #   00-checks.yml            (always)     실행 전 확인
-#   01-cleanup-wem12.yml     cleanup      WEM 1.2 삭제
+#   01-cleanup-wem12.yml     cleanup      WEM 1.2/1.3 삭제
 #   03-pg-hba.yml            pghba        WHPG pg_hba.conf 허용 추가
 #   04-clickhouse.yml        clickhouse   ClickHouse 설치
 #   05-state-database.yml    statedb      WEM 상태용 PostgreSQL 설치
@@ -26,7 +26,7 @@
 #   10-summary.yml           (always)     서비스 상태 확인
 # =============================================================================
 
-- name: Replace WEM 1.2 with WEM 1.4
+- name: Replace WEM 1.2/1.3 with WEM 1.4
   hosts: whpg_clusters
   become: true
   gather_facts: true
