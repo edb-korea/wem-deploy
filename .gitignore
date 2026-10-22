@@ -1,0 +1,2 @@
+# ansible.cfg 의 fact_caching_connection (실행할 때 생기는 facts 캐시)
+.ansible_facts_cache/
