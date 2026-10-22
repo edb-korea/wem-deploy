@@ -5,7 +5,7 @@
 # WEM 이 배포한 config.yaml 은 acp-host-agent 를 재시작하면 다시 렌더링되어 직접 수정한 값이 원복된다.
 # 그래서 config.yaml 은 건드리지 않고 override 파일(config_local.yaml)을 만들어
 # edb-otelcol.conf 의 OTELCOL_OPTIONS 에 --config 로 함께 읽게 한다.
-#   - 모든 노드: file_log(start_at=end, poll_interval), batch 값 조정
+#   - 모든 노드: file_log(start_at=end, poll_interval) 조정
 #   - wem_use_vip=true (coordinator failover 대비):
 #       coordinator : metrics 파이프라인에서 sqlquery/whpg 제거
 #       standby     : whpg_db_metrics.yaml 을 복사하고 sqlquery/whpg(VIP 접속)를 추가

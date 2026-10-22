@@ -3,7 +3,7 @@
 # warehouse-pg-wem 변수 (WEM 1.2 삭제 + WEM 1.4 구성). 단계별로 구역을 나눠 두었다.
 #
 # 값을 바꾸는 방법 (우선순위가 높은 순)
-#   1) 실행할 때:      ansible-playbook playbooks/run_wem_1.2_to_1.4.yml -e wem_port=8090
+#   1) 실행할 때:      ansible-playbook playbooks/wem_deploy.yml -e wem_port=8090
 #   2) inventory/cluster_vars.yml 에 같은 이름으로 추가 후 playbooks/generate_inventory.yml 실행
 #   3) 이 파일 수정    (권장하지 않음. role 을 업데이트할 때 덮어써진다)
 # 자세한 설명과 전체 변수 목록은 README.md 를 참고한다.
@@ -178,6 +178,8 @@ wem_unix_group: "gpadmin"
 wem_insecure_cookies: "1"
 # 대규모 환경이면 "true" (wem.conf 의 HIGH_LOAD_MODE)
 wem_high_load_mode: ""
+# WEM 의 DB 연결 풀 최대 연결 수 (wem.conf 의 WEM_POOL_MAX_CONNS). 비우면 넣지 않음
+wem_pool_max_conns: "40"
 # 외부(Prometheus 등)에 메트릭을 노출하는 주소
 wem_otel_prometheus_scrape_endpoint: "0.0.0.0:8889"
 # wem.conf 에 그대로 추가할 줄 (예: ["LOG_SCAN_ENABLED=false", "WEM_CLUSTER_NAME=whpg"])
@@ -198,6 +200,19 @@ host_agent_conf: "/etc/edb/acp-host-agent/acp-host-agent.conf"
 host_agent_join_token_file: "/etc/edb/acp-host-agent/join-token"
 # acp-host-agent 서비스 계정 (서비스가 join-token 을 이 계정 소유 0600 으로 만들고 이 계정으로 읽는다)
 host_agent_user: "acp-host-agent"
+
+
+# ----------------------------------------------------------------------------
+# RPM 업그레이드  [upgrade]  (-t upgrade 를 지정할 때만 실행)
+# ----------------------------------------------------------------------------
+# repo 의 최신 버전으로 올릴 패키지 (설치되어 있는 것만 올린다)
+wem_upgrade_packages_wem_host:
+  - whpg-enterprise-manager
+  - edb-clickhouse-server
+  - edb-clickhouse-client
+wem_upgrade_packages_all_hosts:
+  - edb-acp-host-agent
+  - edb-otelcol
 
 
 # ----------------------------------------------------------------------------
@@ -224,9 +239,6 @@ _otel_sqlquery_mode: >-
 agent_approval_wait_seconds: 240
 
 # CPU 사용량 절감 튜닝 값
-otelcol_batch_send_batch_size: 8192
-otelcol_batch_send_batch_max_size: 16384
-otelcol_batch_timeout: "5s"
 otelcol_filelog_poll_interval: "1s"
 
 # standby 의 sqlquery/whpg (가이드 주의 2-3). 쿼리 정의는 coordinator 에서 복사한다 (주의 2-1)
