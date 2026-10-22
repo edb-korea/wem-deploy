@@ -38,13 +38,16 @@
   tags: [agent]
 
 # otelcol 설정 조정 (CPU 절감, DB 메트릭 수집 위치)
+# 08 / 09 는 --check 에서 Host Agent 가 아직 설치되지 않았으면(설치 예정) 건너뛴다 (WEM 이 배포할 설정이 없음)
 - name: "08-otelcol-tune"
   ansible.builtin.import_tasks: 08-otelcol-tune.yml
+  when: not (ansible_check_mode and (_agent_pkg | default({})) is changed)
   tags: [tune]
 
 # ClickHouse Coordinator Query Logs 객체 (WEM host)
 - name: "09-query-logs"
   ansible.builtin.import_tasks: 09-query-logs.yml
+  when: not (ansible_check_mode and (_agent_pkg | default({})) is changed)
   tags: [querylogs]
 
 # WEM 관련 RPM 을 repo 최신 버전으로 업그레이드 (-t upgrade 를 지정할 때만)

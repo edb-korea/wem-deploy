@@ -9,6 +9,7 @@
       register: _wem_installed_ver
       changed_when: false
       failed_when: false
+      check_mode: false
 
     # -t upgrade 로 더 높은 버전이 설치되어 있으면 고정 버전으로 내리지 않는다
     - name: Install WEM 1.4 package
@@ -16,6 +17,7 @@
         name: "{{ wem14_package }}"
         state: present
       timeout: "{{ DNF_TIMEOUT }}"
+      register: _wem_pkg
       when: >-
         _wem_installed_ver.rc != 0
         or not (_wem_installed_ver.stdout | trim) is version(wem14_package | regex_search('[0-9][0-9.]*$') | default('0', true), '>=')
@@ -24,6 +26,7 @@
       ansible.builtin.command: openssl rand -hex 32
       register: _cookie_secret
       changed_when: false
+      check_mode: false
       no_log: true
 
     # Host Agent 자동 승인용 공유 비밀
@@ -31,6 +34,7 @@
       ansible.builtin.command: openssl rand -hex 32
       register: _join_secret
       changed_when: false
+      check_mode: false
       no_log: true
 
     - name: Keep generated secrets as facts
@@ -63,18 +67,22 @@
       changed_when: "'opened' in _fw.stdout"
       when: wem_manage_firewall | bool
 
-    - name: Enable and start WEM
-      ansible.builtin.systemd:
-        name: wem
-        enabled: true
-        state: restarted
-        daemon_reload: true
+    # --check 에서 패키지가 아직 설치되지 않았으면(설치 예정) 서비스 기동 / 확인은 건너뛴다
+    - name: Start and verify WEM
+      when: not (ansible_check_mode and _wem_pkg is changed)
+      block:
+        - name: Enable and start WEM
+          ansible.builtin.systemd:
+            name: wem
+            enabled: true
+            state: restarted
+            daemon_reload: true
 
-    - name: Wait for WEM web / agent relay ports
-      ansible.builtin.wait_for:
-        host: "{{ wem_host_ip }}"
-        port: "{{ item }}"
-        timeout: 180
-      loop:
-        - "{{ wem_port }}"
-        - "{{ wem_agent_port }}"
+        - name: Wait for WEM web / agent relay ports
+          ansible.builtin.wait_for:
+            host: "{{ wem_host_ip }}"
+            port: "{{ item }}"
+            timeout: 180
+          loop:
+            - "{{ wem_port }}"
+            - "{{ wem_agent_port }}"
