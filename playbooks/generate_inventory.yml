@@ -7,8 +7,8 @@
 #   ansible-playbook playbooks/generate_inventory.yml -e inventory_output=/tmp/inv.yml  # 다른 경로에 미리 만들어 보기
 #
 # 동작
-#   1) inventory/cluster_vars.yml 의 whpg_coordinator_hosts 를 순서대로 접속해 본다
-#      (coordinator, standby 를 적어 두면 failover 로 standby 가 primary 가 된 경우도 찾음).
+#   1) inventory/cluster_vars.yml 의 whpg_coordinator_hosts 를 순서대로 접속해 본다.
+#      VIP 와 coordinator 만 적고 standby coordinator 는 적지 않는다 (VIP 는 IP 만, coordinator 는 IP 와 hostname).
 #      항목은 "IP" 또는 { ip: "IP", hostname: "이름" }. SSH 접속은 항상 ip 로 하고,
 #      hostname 을 적으면 접속한 서버의 실제 hostname 과 비교해 다르면 중단한다 (다른 클러스터 오접속 방지).
 #      -e whpg_coordinator=<IP 또는 이름>[,<IP>...] 를 주면 그 값이 우선한다. 기존 inventory.yml 은 보지 않는다.
@@ -82,7 +82,7 @@
         that: _gen_seeds | length > 0
         fail_msg: >-
           접속할 coordinator 를 알 수 없습니다. {{ inventory_cluster_vars_file }} 의 whpg_coordinator_hosts 에
-          coordinator(와 standby) IP 를 적거나 -e whpg_coordinator=<IP> 로 지정하세요.
+          VIP 와 coordinator IP 를 적거나 -e whpg_coordinator=<IP> 로 지정하세요.
         quiet: true
 
     - name: Show where to connect
@@ -171,6 +171,7 @@
         fail_msg: >-
           whpg_coordinator_hosts 의 hostname 과 실제 서버 hostname 이 다릅니다 (다른 클러스터일 수 있음):
           {{ _gen_hostname_mismatch | join(' / ') }}. cluster_vars.yml 의 ip / hostname 을 확인하세요.
+          VIP 는 붙어 있는 서버가 바뀌므로 hostname 없이 IP 만 적습니다.
         quiet: true
       vars:
         _gen_hostname_mismatch: >-
@@ -205,7 +206,8 @@
           gp_segment_configuration 을 읽을 수 있는 primary coordinator 가 없습니다.
           서버별 원인: {{ _gen_seed_reasons }}.
           SSH 거부면 cluster_vars.yml 의 ansible_user / ansible_ssh_common_args(IdentityFile) 를,
-          모두 standby 면 whpg_coordinator_hosts 에 현재 primary coordinator 를 적거나 -e whpg_coordinator=<IP> 로 지정하세요.
+          recovery 상태(standby)만 있으면 VIP 가 standby 에 붙어 있거나 failover 된 상태이므로,
+          whpg_coordinator_hosts 의 coordinator 를 현재 primary coordinator 로 고치거나 -e whpg_coordinator=<IP> 로 지정하세요.
         quiet: true
       vars:
         # 서버마다 실패 이유를 한 줄로: SSH 실패 / recovery 상태(standby) / psql 오류
