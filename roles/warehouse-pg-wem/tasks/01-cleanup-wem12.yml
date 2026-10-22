@@ -1,5 +1,5 @@
 ---
-# WEM 1.2 삭제 (Prometheus / Loki / Alertmanager / Alloy / collector)
+# WEM 1.2/1.3 삭제 (Prometheus / Loki / Alertmanager / Alloy / collector)
 # tag: cleanup
 - name: Stop and disable WEM related services (없는 서비스는 건너뜀)
   ansible.builtin.shell:
@@ -13,7 +13,7 @@
   register: _stop_services
   changed_when: _stop_services.stdout | length > 0
 
-- name: Remove WEM 1.2 / observability packages
+- name: Remove WEM 1.2/1.3 / observability packages
   ansible.builtin.dnf:
     name: "{{ cleanup_packages }}"
     state: absent
@@ -43,7 +43,7 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: Drop WEM 1.2 state database in WHPG
+- name: Drop WEM 1.2/1.3 state database in WHPG
   ansible.builtin.shell:
     cmd: |
       source /usr/local/greenplum-db/greenplum_path.sh

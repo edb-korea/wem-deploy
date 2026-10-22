@@ -1,7 +1,15 @@
 # WarehousePG WEM 1.4 Ansible
 
-**이미 설치되어 동작 중인 WarehousePG(WHPG) 클러스터**에 WEM(WarehousePG Enterprise Manager) 1.4 를 설치하고 삭제하는 Ansible 입니다.
-WEM 1.2 가 있으면 지우고 1.4 로 전환합니다. WHPG 자체의 설치와 HA 구성은 다루지 않습니다.
+이 앤서블 코드는
+
+1. WEM V1.2/V1.3 이 설치되어 있으면 삭제하고, WEM V1.4 이상을 설치하고,
+2. WEM 이 설치되어 있지 않으면 WEM V1.4 이상을 설치하고,
+3. WEM V1.4 이상이 설치되어 있으면 repo 확인 후 최신 버전으로 Upgrade 하는
+
+Ansible 코드입니다. WHPG 자체의 설치와 HA 구성은 다루지 않습니다.
+
+1, 2 는 `ansible-playbook playbooks/wem_deploy.yml` 로, 3 은 `-t upgrade` 를 붙인 `ansible-playbook playbooks/wem_deploy.yml -t upgrade` 로 실행합니다.
+태그 없이 `wem_deploy.yml` 을 실행하면 설치된 버전과 관계없이 기존 WEM 을 삭제한 뒤 새로 설치하므로, 이미 V1.4 이상이 설치되어 있으면 반드시 `-t upgrade` 로 실행합니다.
 
 > 기준 환경: Rocky Linux 9, WHPG 7.6, WEM 1.4.0, Host Agent 1.1.0, otelcol 0.158.0, ansible-core 2.14 이상
 > 전제: WHPG 가 설치되어 동작 중이고, 모든 노드에 WEM 1.4 패키지를 받을 수 있는 yum/dnf repo 가 **이미 구성**되어 있어야 합니다(2-3절).
@@ -11,7 +19,7 @@ WEM 1.2 가 있으면 지우고 1.4 로 전환합니다. WHPG 자체의 설치�
 | 하고 싶은 일 | 명령 (이 디렉터리에서 실행) |
 |---|---|
 | inventory.yml 생성 (WHPG 에서 읽기) | `ansible-playbook playbooks/generate_inventory.yml` |
-| **WEM 1.4 설치** (1.2 가 있으면 삭제 후) | `ansible-playbook playbooks/wem_deploy.yml` |
+| **WEM 1.4 설치** (1.2/1.3 이 있으면 삭제 후) | `ansible-playbook playbooks/wem_deploy.yml` |
 | 위와 같고 standby 의 DB 메트릭 수집이 VIP 로 접속 | `ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true` |
 | 관련 rpm 의 설치 / repo 최신 버전 확인만 | `ansible-playbook playbooks/wem_deploy.yml -t upgrade --check` |
 | **관련 rpm 을 repo 최신 버전으로 업그레이드** | `ansible-playbook playbooks/wem_deploy.yml -t upgrade` |
@@ -65,7 +73,7 @@ ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true   # standby 의 DB
 ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml       # 비밀번호 등을 파일로 지정 (4절)
 ```
 
-WEM 1.2 가 있으면 먼저 지우고 1.4 를 설치합니다(3-1절).
+WEM 1.2/1.3 이 있으면 먼저 지우고 1.4 를 설치합니다(3-1절).
 
 **5단계. 설치 확인** (8절)
 
@@ -118,7 +126,7 @@ samsung_ansible/
 │   └── inventory.yml.j2         # inventory.yml 템플릿
 ├── playbooks/
 │   ├── generate_inventory.yml   # WHPG 의 gp_segment_configuration + /etc/hosts + cluster_vars.yml -> inventory.yml
-│   ├── wem_deploy.yml           # WEM 1.2 삭제 + 1.4 설치
+│   ├── wem_deploy.yml           # WEM 1.2/1.3 삭제 + 1.4 설치
 │   └── wem_uninstall.yml        # WEM 1.4 삭제
 └── roles/
     └── warehouse-pg-wem/        # WEM 설치 / 삭제 role (11절)
@@ -215,7 +223,7 @@ WEM 은 **standby 가 있으면 standby, 없으면 coordinator** 에 설치됩�
 
 ## 3. 실행
 
-### 3-1. WEM 1.4 설치 (WEM 1.2 가 있으면 삭제 후)
+### 3-1. WEM 1.4 설치 (WEM 1.2/1.3 이 있으면 삭제 후)
 
 ```bash
 ansible-playbook playbooks/wem_deploy.yml
@@ -224,7 +232,7 @@ ansible-playbook playbooks/wem_deploy.yml
 수행 순서는 다음과 같습니다. 각 단계의 이름이 [7. 단계별 실행](#7-단계별-실행-tags)의 tag 입니다.
 
 1. 실행 전 확인(OS, VIP 활성 여부, 배치 계산)
-2. WEM 1.2 삭제 (Prometheus, Loki, Alertmanager, Alloy, collector, WEM, WHPG 의 `wem` DB). 1.2 가 없으면 지울 것이 없어 그냥 지나감
+2. WEM 1.2/1.3 삭제 (Prometheus, Loki, Alertmanager, Alloy, collector, WEM, WHPG 의 `wem` DB). 1.2/1.3 이 없으면 지울 것이 없어 그냥 지나감
 3. WHPG `pg_hba.conf` 에 `wem_whpg_user` 접속 허용 추가 (`gpstop -u`)
 4. ClickHouse 설치 (WEM host)
 5. WEM 접속 계정 / DB / resource group 생성 (WHPG coordinator). `wem_state_install=true` 면 WEM host 에 별도 상태 DB(PostgreSQL) 설치
@@ -260,7 +268,7 @@ ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 확인 후 업�
 ansible-playbook playbooks/wem_uninstall.yml
 ```
 
-WHPG 본체, WEM 1.2(Prometheus/Loki/Alloy), `/etc/edb/pgaa` 는 지우지 않습니다.
+WHPG 본체, WEM 1.2/1.3(Prometheus/Loki/Alloy), `/etc/edb/pgaa` 는 지우지 않습니다.
 
 - 서비스 / 파일: WEM, ClickHouse, 상태 DB(설치한 경우), Host Agent, otelcol 과 설정 / 데이터 디렉터리, `pg_hba.conf` 의 WEM 블록
 - rpm: `whpg-enterprise-manager`(버전과 관계없이. `wem_remove_version_prefix: "1.4"` 로 두면 1.4 일 때만), `edb-acp-host-agent`, `edb-otelcol`, `edb-clickhouse-*`, 함께 설치된 뒤 쓰이지 않는 의존 패키지(`wem_remove_autoremove`)
@@ -321,7 +329,7 @@ ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml
 | `wem_whpg_database` | `gpadmin` | WEM 이 모니터링 접속에 쓰는 WHPG DB (Host Agent 의 `WEM_DATABASE`) |
 | `wem_sqlquery_on_standby` | `true` | DB 메트릭(`sqlquery`)을 standby 에서 수집 (가이드 주의 2). coordinator 에서 수집하려면 `false` |
 | `wem_use_vip` | `false` | standby 의 DB 메트릭 수집이 VIP 로 접속하려면 `true` (HA 환경) |
-| `wem_drop_old_state_db_in_whpg` | `true` | 1.2 의 상태 DB(WHPG `wem` DB)를 보존하려면 `false` |
+| `wem_drop_old_state_db_in_whpg` | `true` | 1.2/1.3 의 상태 DB(WHPG `wem` DB)를 보존하려면 `false` |
 | `wem_port` | `8080` | WEM 웹 포트 변경. Host Agent 포트는 자동으로 +1 |
 | `wem_whpg_resource_group_options` | CONCURRENCY 20, CPU_MAX_PERCENT 10 | `wem_group` resource group 설정 |
 | `wem_extra_conf_lines` | `[]` | `wem.conf` 에 줄을 추가 (예: `LOG_SCAN_ENABLED=false`) |
@@ -363,18 +371,18 @@ ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml
 
 자동 계산되어 보통 바꾸지 않는 변수: `coordinator_host`, `wem_host`(WEM 설치 호스트, standby 우선), `coordinator_ip`, `wem_host_ip`, `vip_addr`, `standby_db_host`.
 
-### 6-2. WEM 1.2 삭제 (`01-cleanup-wem12.yml`)
+### 6-2. WEM 1.2/1.3 삭제 (`01-cleanup-wem12.yml`)
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `wem_drop_old_state_db_in_whpg` | `true` | WHPG 의 `wem_state_database`(1.2 상태 DB)를 삭제. 보호 목록에 있는 이름이면 지우지 않음 |
+| `wem_drop_old_state_db_in_whpg` | `true` | WHPG 의 `wem_state_database`(1.2/1.3 상태 DB)를 삭제. 보호 목록에 있는 이름이면 지우지 않음 |
 | `cleanup_services` | wem, prometheus, alertmanager, loki, alloy | 중지하고 비활성화할 서비스 |
 | `cleanup_packages` | WEM, Prometheus, Alertmanager, Loki, Alloy, collector 패키지 | 삭제할 패키지 |
 | `cleanup_paths_all_hosts` | `/etc/alloy`, `/var/lib/alloy`, `/var/lib/whpg-observability-collector` | 모든 노드에서 삭제할 경로 |
 | `cleanup_paths_wem_host` | `/etc/wem`, `/etc/prometheus`, `/etc/loki`, `/data1/loki` 등 | WEM host 에서만 삭제할 경로 |
 | `cleanup_users` | prometheus, alertmanager, loki | 삭제할 계정 |
 
-운영 환경의 1.2 설치 경로가 다르면 `cleanup_*` 목록을 맞춥니다. 확인 방법은 `rpm -qa | grep -iE "wem|loki|prometheus|alloy"` 와 `systemctl list-unit-files | grep -iE "wem|loki|prometheus|alloy"` 입니다.
+운영 환경의 1.2/1.3 설치 경로가 다르면 `cleanup_*` 목록을 맞춥니다. 확인 방법은 `rpm -qa | grep -iE "wem|loki|prometheus|alloy"` 와 `systemctl list-unit-files | grep -iE "wem|loki|prometheus|alloy"` 입니다.
 
 ### 6-3. pg_hba / ClickHouse 패키지 (`03-pg-hba.yml`, `04-clickhouse.yml`)
 
@@ -478,7 +486,7 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 | `wem_protected_databases` | `postgres`, `template0`, `template1`, `gpadmin`, 클러스터 기본 DB | 어떤 경우에도 지우지 않는 데이터베이스 |
 | `wem_remove_pg_hba_block` | `true` | `pg_hba.conf` 의 WEM 블록 삭제 |
 | `wem_drop_whpg_roles` | `true` | WHPG 의 WEM role / DB / resource group 삭제 |
-| `wem_whpg_roles` | `["wem", "wemadmin"]` | 함께 삭제할 (1.2 등의) role 목록 |
+| `wem_whpg_roles` | `["wem", "wemadmin"]` | 함께 삭제할 (1.2/1.3 등의) role 목록 |
 | `remove_services`, `remove_packages`, `remove_paths_all_hosts`, `remove_paths_wem_host`, `remove_paths_wem14_only` | 파일 참고 | 삭제 대상 서비스, 패키지, 경로 |
 
 ## 7. 단계별 실행 (tags)
@@ -487,7 +495,7 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 
 | tag | 태스크 파일 (`roles/warehouse-pg-wem/tasks/`) | 내용 |
 |---|---|---|
-| `cleanup` | `01-cleanup-wem12.yml` | WEM 1.2 삭제 |
+| `cleanup` | `01-cleanup-wem12.yml` | WEM 1.2/1.3 삭제 |
 | `pghba` | `03-pg-hba.yml` | WHPG `pg_hba.conf` 허용 추가 |
 | `clickhouse` | `04-clickhouse.yml` | ClickHouse 설치 |
 | `statedb` | `05-state-database.yml` | WEM 접속 계정 / DB / resource group, (선택) 별도 상태 DB |
@@ -563,10 +571,10 @@ SELECT * FROM coordinator_query_logs LIMIT 5;
 
 ## 10. 운영 환경 적용 전 점검
 
-- `wem_drop_old_state_db_in_whpg`: 기본이 `true` 라 WHPG 의 `wem` DB 를 지웁니다. 1.2 의 알림 규칙 등 운영 데이터가 있으면 `false` 로 두거나 먼저 `pg_dump` 로 백업합니다.
+- `wem_drop_old_state_db_in_whpg`: 기본이 `true` 라 WHPG 의 `wem` DB 를 지웁니다. 1.2/1.3 의 알림 규칙 등 운영 데이터가 있으면 `false` 로 두거나 먼저 `pg_dump` 로 백업합니다.
 - `wem_whpg_database` 를 업무 DB 로 지정하면 WEM 이 그 DB 에 `wem` 스키마 객체를 만듭니다. 삭제할 때는 `wem_whpg_user` 소유 객체만 지우고, 보호 목록(`wem_protected_databases`)의 DB 와 다른 계정 소유 DB 는 지우지 않습니다.
 - 비밀번호(`wem_admin_password`, `clickhouse_password`, `wem_whpg_password`, `wem_state_password`)를 운영 환경 값으로 바꿉니다.
-- 운영 환경의 1.2 설치 경로가 다를 수 있습니다. `cleanup_*` 목록(6-2절)을 확인합니다.
+- 운영 환경의 1.2/1.3 설치 경로가 다를 수 있습니다. `cleanup_*` 목록(6-2절)을 확인합니다.
 - WEM 은 standby(없으면 coordinator)에 설치됩니다.
 - 모든 노드에서 `dnf info whpg-enterprise-manager-1.4.0 edb-acp-host-agent edb-otelcol edb-clickhouse-server` 로 패키지를 받을 수 있는지 확인합니다(repo 는 이 Ansible 이 구성하지 않음).
 - DB 메트릭은 기본으로 standby 에서 수집합니다(주의 2). VIP HA 환경이면 `wem_use_vip=true` 로 실행해 failover 후에도 VIP 로 계속 수집하게 합니다.
@@ -583,7 +591,7 @@ roles/warehouse-pg-wem/
 ├── tasks/
 │   ├── main.yml                 # 단계 순서와 tag 정의
 │   ├── 00-checks.yml            # (always)    실행 전 확인: OS, VIP 활성 여부, wem_use_vip 조건, 배치 출력
-│   ├── 01-cleanup-wem12.yml     # cleanup     WEM 1.2 삭제
+│   ├── 01-cleanup-wem12.yml     # cleanup     WEM 1.2/1.3 삭제
 │   ├── 03-pg-hba.yml            # pghba       pg_hba.conf 허용 추가
 │   ├── 04-clickhouse.yml        # clickhouse  ClickHouse 설치
 │   ├── 05-state-database.yml    # statedb     WEM 접속 계정 / DB / resource group, (선택) 별도 상태 DB
@@ -631,5 +639,5 @@ roles/warehouse-pg-wem/
 - `wem_use_vip=true` 실행 (VIP 비활성 환경이라 병합 설정의 validate 까지만 확인)
 - `wem_state_install=true` 를 최근 변경 이후 실행
 - coordinator failover 때 수집이 이어지는지
-- WEM 1.2 가 **설치된 상태에서** 바로 전환하는 흐름 (삭제 후 신규 설치로만 확인)
+- WEM 1.2/1.3 이 **설치된 상태에서** 바로 전환하는 흐름 (삭제 후 신규 설치로만 확인)
 - `LOG_SCAN_ENABLED=false` 로 로그 스캔 오류가 사라지는지

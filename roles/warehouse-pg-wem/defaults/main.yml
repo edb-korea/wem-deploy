@@ -1,6 +1,6 @@
 ---
 # =============================================================================
-# warehouse-pg-wem 변수 (WEM 1.2 삭제 + WEM 1.4 구성). 단계별로 구역을 나눠 두었다.
+# warehouse-pg-wem 변수 (WEM 1.2/1.3 삭제 + WEM 1.4 구성). 단계별로 구역을 나눠 두었다.
 #
 # 값을 바꾸는 방법 (우선순위가 높은 순)
 #   1) 실행할 때:      ansible-playbook playbooks/wem_deploy.yml -e wem_port=8090
@@ -94,11 +94,11 @@ wem_admin_password: "changeme_wem"
 
 
 # ----------------------------------------------------------------------------
-# WEM 1.2 삭제  [01-cleanup-wem12]
+# WEM 1.2/1.3 삭제  [01-cleanup-wem12]
 # ----------------------------------------------------------------------------
-# WEM 1.2 삭제 대상 (1.4 삭제는 wem-remove-14 role)
+# WEM 1.2/1.3 삭제 대상 (1.4 삭제는 wem-remove-14 role)
 
-# 1.2 상태 DB(WHPG 의 wem DB) 삭제 여부. 운영 데이터가 있으면 false 로 두거나 먼저 백업한다
+# 1.2/1.3 상태 DB(WHPG 의 wem DB) 삭제 여부. 운영 데이터가 있으면 false 로 두거나 먼저 백업한다
 wem_drop_old_state_db_in_whpg: true
 
 # 어떤 경우에도 DROP 하지 않는 WHPG 데이터베이스 (wem_whpg_database / wem_state_database 를 이 이름으로 지정해도 보호)
@@ -269,7 +269,7 @@ coordinator_query_logs_wait_seconds: 300
 # ----------------------------------------------------------------------------
 # WEM 1.4 삭제 (테스트 초기화용). 설치된 whpg-enterprise-manager 버전이 이 값으로 시작할 때만 패키지를 삭제한다
 #   ""  : 버전과 관계없이 삭제 (기본)
-#   "1.4": 1.4 일 때만 삭제 (1.2 가 설치되어 있으면 건드리지 않는다)
+#   "1.4": 1.4 일 때만 삭제 (1.2/1.3 이 설치되어 있으면 건드리지 않는다)
 wem_remove_version_prefix: ""
 # true: 삭제한 패키지와 함께 설치되었고 더 이상 쓰이지 않는 의존 패키지도 삭제 (dnf autoremove)
 wem_remove_autoremove: true
