@@ -23,7 +23,7 @@ Ansible 코드입니다. WHPG 자체의 설치와 HA 구성은 다루지 않습�
 | 위와 같고 standby 의 DB 메트릭 수집이 VIP 로 접속 | `ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true` |
 | 관련 rpm 의 설치 / repo 최신 버전 확인만 | `ansible-playbook playbooks/wem_deploy.yml -t upgrade --check` |
 | **관련 rpm 을 repo 최신 버전으로 업그레이드** | `ansible-playbook playbooks/wem_deploy.yml -t upgrade` |
-| **WEM 1.4 삭제** | `ansible-playbook playbooks/wem_uninstall.yml` |
+| **WEM 1.4 삭제** (`whpg-enterprise-manager` 가 1.4 이상일 때만) | `ansible-playbook playbooks/wem_uninstall.yml` |
 
 `wem_deploy.yml` 과 `wem_uninstall.yml` 은 **확인 질문 없이 바로 삭제를 시작**합니다. 실행하기 전에 [10. 운영 환경 적용 전 점검](#10-운영-환경-적용-전-점검)을 확인합니다.
 
@@ -97,6 +97,7 @@ ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 2) 업그레이
 ### 삭제 (uninstall)
 
 WEM 1.4 와 ClickHouse, Host Agent, otelcol, WHPG 의 WEM 계정 / DB 를 지웁니다(3-3절). WHPG 본체는 지우지 않습니다.
+WEM host 의 `whpg-enterprise-manager` rpm 이 1.4 이상일 때만 수행하고, 없거나 그보다 낮으면 아무것도 지우지 않고 끝납니다.
 
 ```bash
 ansible-playbook playbooks/wem_uninstall.yml
@@ -268,10 +269,11 @@ ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 확인 후 업�
 ansible-playbook playbooks/wem_uninstall.yml
 ```
 
+WEM host 의 `whpg-enterprise-manager` rpm 이 **1.4 이상일 때만** 수행합니다(`wem_remove_min_version`). rpm 이 없거나 1.2/1.3 처럼 그보다 낮으면 버전을 출력하고 아무것도 지우지 않고 끝납니다.
 WHPG 본체, WEM 1.2/1.3(Prometheus/Loki/Alloy), `/etc/edb/pgaa` 는 지우지 않습니다.
 
 - 서비스 / 파일: WEM, ClickHouse, 상태 DB(설치한 경우), Host Agent, otelcol 과 설정 / 데이터 디렉터리, `pg_hba.conf` 의 WEM 블록
-- rpm: `whpg-enterprise-manager`(버전과 관계없이. `wem_remove_version_prefix: "1.4"` 로 두면 1.4 일 때만), `edb-acp-host-agent`, `edb-otelcol`, `edb-clickhouse-*`, 함께 설치된 뒤 쓰이지 않는 의존 패키지(`wem_remove_autoremove`)
+- rpm: `whpg-enterprise-manager`, `edb-acp-host-agent`, `edb-otelcol`, `edb-clickhouse-*`, 함께 설치된 뒤 쓰이지 않는 의존 패키지(`wem_remove_autoremove`)
 - WHPG 데이터베이스: `wem_remove_databases`(기본 `wem`, WEM 상태 DB)는 소유자와 관계없이 접속 세션을 끊고 지우고, `wem_whpg_database` 는 `wem_whpg_user` 소유일 때만 지웁니다.
   `postgres`, `template0`, `template1`, `gpadmin` 과 클러스터 기본 DB(`wem_protected_databases`)는 **어떤 경우에도 지우지 않습니다.**
 - WHPG 계정 / resource group: 각 DB 에서 `DROP OWNED BY wem_whpg_user` 후 `wem_whpg_user`, `wem_whpg_resource_group`, `wem` / `wemadmin` role 삭제
@@ -480,7 +482,7 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `wem_remove_version_prefix` | `""` | `whpg-enterprise-manager` 를 이 버전으로 시작할 때만 삭제. 빈 값이면 버전과 관계없이 삭제 |
+| `wem_remove_min_version` | `"1.4"` | WEM host 의 `whpg-enterprise-manager` 가 이 버전 이상일 때만 삭제를 진행. 없거나 낮으면 아무것도 지우지 않고 끝남 |
 | `wem_remove_autoremove` | `true` | 삭제한 패키지와 함께 설치되었고 더 이상 쓰이지 않는 의존 패키지도 삭제 |
 | `wem_remove_databases` | `["wem"]` (`wem_state_database`) | 소유자와 관계없이 지우는 WHPG 데이터베이스 (접속 세션은 끊음) |
 | `wem_protected_databases` | `postgres`, `template0`, `template1`, `gpadmin`, 클러스터 기본 DB | 어떤 경우에도 지우지 않는 데이터베이스 |
