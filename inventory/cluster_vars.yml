@@ -6,12 +6,13 @@
 # =============================================================================
 
 # --- inventory.yml 생성 시 접속할 서버 (generate_inventory.yml) ---
-# gp_segment_configuration 을 읽기 위해 이 순서로 접속한다. VIP 와 coordinator 를 적어 두면 순서대로 처리한다. 
+# gp_segment_configuration 을 읽기 위해 이 순서로 접속한다. VIP 와 coordinator 만 적고 standby coordinator 는 적지 않는다.
+#   VIP        : IP 만 적는다. VIP 는 서버 사이를 옮겨 다니므로 hostname 을 적으면 확인에 실패한다.
+#   coordinator: 실 IP 와 실제 hostname 을 적는다. hostname 이 다르면 다른 클러스터로 보고 중단한다.
 whpg_coordinator_hosts:
-#    - { ip: "10.0.8.209",  hostname: "whpg-vip" }  # VIP
-#    - { ip: "10.0.8.209",  hostname: "whpg-cdw" }  # coordinator
-    - { ip: "10.0.3.8",  hostname: "whpg-vip" }  # VIP
-    - { ip: "10.0.3.8",  hostname: "whpg-m" }  # coordinator
+    - "10.0.15.200"                                 # VIP (keepalived)
+    - { ip: "10.0.15.112", hostname: "whpg-cdw" }   # coordinator
+#    - { ip: "10.0.3.8",  hostname: "whpg-m" }      # coordinator (이전 클러스터)
 
 # --- SSH 접속 (선택. 적지 않으면 ansible 을 실행한 계정과 ~/.ssh 기본 키, sudo 로 root) ---
 # generate_inventory.yml 의 접속과 생성된 inventory.yml (WEM 설치 / 삭제) 에 함께 적용된다.
@@ -29,4 +30,4 @@ whpg_coordinator_data_directory: "/data/coordinator/gpseg-1"
 whpg_default_database: "gpadmin"
 
 # --- Coordinator VIP (선택, wem_use_vip=true 일 때 DB 메트릭을 이 주소로 수집) ---
-whpg_vip_cidr: "10.0.8.209/24"
+whpg_vip_cidr: "10.0.15.200/20"

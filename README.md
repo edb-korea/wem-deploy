@@ -33,16 +33,18 @@ WEM 1.2 가 있으면 지우고 1.4 로 전환합니다. WHPG 자체의 설치�
 **2단계. `inventory/cluster_vars.yml` 에 대상 클러스터 정보 수정** (2-4절)
 
 ```yaml
-whpg_coordinator_hosts:                     # inventory 를 만들 때 접속할 서버 (순서대로 시도)
-    - { ip: "10.0.3.8", hostname: "whpg-vip" }  # VIP
-    - { ip: "10.0.3.8", hostname: "whpg-m" }    # coordinator
+whpg_coordinator_hosts:                     # inventory 를 만들 때 접속할 서버 (순서대로 시도). standby 는 적지 않음
+    - "10.0.15.200"                                 # VIP (IP 만)
+    - { ip: "10.0.15.112", hostname: "whpg-cdw" }   # coordinator (실 IP 와 실제 hostname)
 ansible_ssh_common_args: "-o IdentityFile=~/.ssh/id_rsa"   # 노드 접속 키 (여러 개면 IdentityFile 을 이어서 적음)
 whpg_coordinator_data_directory: "/data/coordinator/gpseg-1"
 whpg_default_database: "gpadmin"
-whpg_vip_cidr: "10.0.8.209/24"              # VIP 가 없으면 비움
+whpg_vip_cidr: "10.0.15.200/20"             # VIP 가 없으면 비움
 ```
 
-`hostname` 은 실제 서버의 hostname 과 같아야 합니다. 다르면 다른 클러스터에 잘못 접속한 것으로 보고 중단합니다.
+`whpg_coordinator_hosts` 에는 **VIP 와 coordinator 만** 적고 standby coordinator 는 적지 않습니다.
+coordinator 의 `hostname` 은 실제 서버의 hostname 과 같아야 합니다. 다르면 다른 클러스터에 잘못 접속한 것으로 보고 중단합니다.
+VIP 는 붙어 있는 서버가 바뀌므로 hostname 없이 IP 만 적습니다. VIP 가 없으면 coordinator 만 적습니다.
 매번 같은 값으로 쓸 WEM 변수(`wem_port`, 비밀번호 등)도 여기에 함께 적을 수 있습니다(4절).
 
 **3단계. `inventory.yml` 생성과 접속 확인** (2-4절)
@@ -175,12 +177,13 @@ ansible-playbook playbooks/generate_inventory.yml -e inventory_output=/tmp/inv.y
 
 동작:
 
-1. `inventory/cluster_vars.yml` 의 `whpg_coordinator_hosts` 에 적힌 순서로 SSH 접속합니다. VIP 와 coordinator 를 적어 두면 순서대로 처리한다. 
+1. `inventory/cluster_vars.yml` 의 `whpg_coordinator_hosts` 에 적힌 순서로 SSH 접속합니다. **VIP 와 coordinator 만** 적고 standby coordinator 는 적지 않습니다.
+   VIP 로 먼저 접속하고, VIP 가 없거나 응답하지 않으면 coordinator 로 접속합니다.
 
 ```yaml
 whpg_coordinator_hosts:
-   - { ip: "10.0.8.209",  hostname: "whpg-vip" }  # VIP
-   - { ip: "10.0.8.209",  hostname: "whpg-cdw" }  # coordinator
+   - "10.0.15.200"                                 # VIP: IP 만 (붙어 있는 서버가 바뀌므로 hostname 을 적지 않음)
+   - { ip: "10.0.15.112", hostname: "whpg-cdw" }   # coordinator: 실 IP 와 실제 hostname
 ```
 
    `-e whpg_coordinator=<IP 또는 이름>[,<IP>...]` 를 주면 그 값이 우선합니다. 기존 `inventory.yml` 은 보지 않으므로 `inventory.yml` 이 없어도 됩니다.
@@ -202,7 +205,7 @@ whpg_coordinator_hosts:
 
 | 변수 | 필수 | 용도 |
 |---|---|---|
-| `whpg_coordinator_hosts` | 예 | `generate_inventory.yml` 이 접속할 서버 목록 (순서대로 시도). 항목은 `"IP"` 또는 `{ ip: "IP", hostname: "이름" }`. SSH 접속은 항상 `ip` 로 하고, `hostname` 을 적으면 실제 hostname 과 비교해 다르면 중단 (다른 클러스터 오접속 방지) |
+| `whpg_coordinator_hosts` | 예 | `generate_inventory.yml` 이 접속할 서버 목록 (순서대로 시도). **VIP 와 coordinator 만** 적고 standby coordinator 는 적지 않음. 항목은 `"IP"` 또는 `{ ip: "IP", hostname: "이름" }`. SSH 접속은 항상 `ip` 로 하고, `hostname` 을 적으면 실제 hostname 과 비교해 다르면 중단 (다른 클러스터 오접속 방지). VIP 는 붙어 있는 서버가 바뀌므로 IP 만 적음 |
 | `ansible_user`, `ansible_port`, `ansible_ssh_common_args` | 아니오 | SSH 접속 설정. `generate_inventory.yml` 의 접속과 생성된 `inventory.yml`(WEM 설치 / 삭제)에 함께 적용. 서버마다 키가 다르면 `ansible_ssh_common_args: "-o IdentityFile=~/.ssh/id_rsa -o IdentityFile=~/.ssh/<다른 키>"` 처럼 여러 개 적음 (ssh 가 순서대로 시도). `ansible_ssh_private_key_file` 은 키 하나만 쓰고 기본 키도 시도하지 않으므로 키가 섞인 환경에서는 쓰지 않음 |
 | `whpg_coordinator_data_directory` | 예 | coordinator 데이터 디렉터리 (예: `/data/coordinator/gpseg-1`). `pg_hba.conf` 위치와 `gpstop -u` 에 사용 |
 | `whpg_default_database` | 아니오 | 클러스터 기본 DB. WEM 삭제 시 지우지 않는 보호 목록에 포함 |
@@ -547,7 +550,7 @@ SELECT * FROM coordinator_query_logs LIMIT 5;
 
 | 증상 | 원인과 해결 |
 |---|---|
-| `generate_inventory.yml` 이 `primary coordinator 가 없습니다` 로 중단 | 메시지의 "서버별 원인"을 봅니다. `SSH 실패 - Permission denied` 면 그 서버가 받는 키가 `ansible_ssh_common_args` 의 `IdentityFile` 에 없음(키 추가) 또는 계정이 다름(`ansible_user`). `recovery 상태(standby)` 만 있으면 `whpg_coordinator_hosts` 에 현재 primary coordinator 를 적거나 `-e whpg_coordinator=<IP>` 로 지정 |
+| `generate_inventory.yml` 이 `primary coordinator 가 없습니다` 로 중단 | 메시지의 "서버별 원인"을 봅니다. `SSH 실패 - Permission denied` 면 그 서버가 받는 키가 `ansible_ssh_common_args` 의 `IdentityFile` 에 없음(키 추가) 또는 계정이 다름(`ansible_user`). `recovery 상태(standby)` 만 있으면 VIP 가 standby 에 붙어 있거나 failover 된 상태. `whpg_coordinator_hosts` 의 coordinator 를 현재 primary coordinator 로 고치거나 `-e whpg_coordinator=<IP>` 로 지정 |
 | `wemon` 로그인 실패 (`does not have a valid SCRAM verifier`) | 비밀번호가 md5 로 저장됨. `-t statedb` 를 다시 실행하면 SCRAM 으로 다시 설정 |
 | `Timeout when waiting for 127.0.0.1:5433` (`wem_state_install=true`) | SELinux 가 PostgreSQL 에 허용한 포트는 5432 와 9898 뿐. 이 role 이 `semanage port` 로 자동 허용하지만, 수동으로는 `semanage port -a -t postgresql_port_t -p tcp 5433` |
 | Host Agent 로그에 `awaiting TLS material` | 자동 승인이 안 됨. `join-token` 이 `acp-host-agent` 계정 소유 0600 이어야 한다. 안 되면 WEM 화면에서 수동 승인한 뒤 `-t tune,querylogs` |

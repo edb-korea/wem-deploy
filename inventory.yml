@@ -1,8 +1,8 @@
 ---
 # =============================================================================
-# 자동 생성 파일 — 직접 수정하지 마세요. (2026-10-17_20:50:55)
-#   호스트: 10.0.3.8 의 gp_segment_configuration + /etc/hosts, 각 서버의 실제 hostname
-#   공통 변수: /home/ec2-user/Ansible/samsung_ansible/inventory/cluster_vars.yml
+# 자동 생성 파일 — 직접 수정하지 마세요. (2026-10-22_18:29:35)
+#   호스트: 10.0.15.112 의 gp_segment_configuration + /etc/hosts, 각 서버의 실제 hostname
+#   공통 변수: /home/ec2-user/Ansible/wem_ansible/inventory/cluster_vars.yml
 #   다시 만들기: ansible-playbook playbooks/generate_inventory.yml
 # =============================================================================
 whpg_clusters:
@@ -17,13 +17,13 @@ whpg_clusters:
         # =============================================================================
 
         # --- inventory.yml 생성 시 접속할 서버 (generate_inventory.yml) ---
-        # gp_segment_configuration 을 읽기 위해 이 순서로 접속한다. coordinator 와 standby 를 적어 두면
-        # failover 로 standby 가 primary 가 된 경우에도 찾는다. (-e whpg_coordinator=<IP> 로 이번만 바꿀 수 있음)
+        # gp_segment_configuration 을 읽기 위해 이 순서로 접속한다. VIP 와 coordinator 만 적고 standby coordinator 는 적지 않는다.
+        #   VIP        : IP 만 적는다. VIP 는 서버 사이를 옮겨 다니므로 hostname 을 적으면 확인에 실패한다.
+        #   coordinator: 실 IP 와 실제 hostname 을 적는다. hostname 이 다르면 다른 클러스터로 보고 중단한다.
         whpg_coordinator_hosts:
-        #    - { ip: "10.0.15.112",  hostname: "whpg-cdw" }  # coordinator
-        #    - { ip: "10.0.8.209",  hostname: "whpg-scdw" }  # standby
-            - { ip: "10.0.3.8",  hostname: "whpg-m" }  # coordinator
-            - { ip: "10.0.3.228",  hostname: "whpg-sm" }  # standby
+            - "10.0.15.200"                                 # VIP (keepalived)
+            - { ip: "10.0.15.112", hostname: "whpg-cdw" }   # coordinator
+        #    - { ip: "10.0.3.8",  hostname: "whpg-m" }      # coordinator (이전 클러스터)
 
         # --- SSH 접속 (선택. 적지 않으면 ansible 을 실행한 계정과 ~/.ssh 기본 키, sudo 로 root) ---
         # generate_inventory.yml 의 접속과 생성된 inventory.yml (WEM 설치 / 삭제) 에 함께 적용된다.
@@ -41,45 +41,45 @@ whpg_clusters:
         whpg_default_database: "gpadmin"
 
         # --- Coordinator VIP (선택, wem_use_vip=true 일 때 DB 메트릭을 이 주소로 수집) ---
-        whpg_vip_cidr: "192.168.10.85/24"
+        whpg_vip_cidr: "10.0.15.200/20"
       hosts:
-        whpg-m:
-          ansible_host: 10.0.3.8
-          ip_address: 10.0.3.8
-          hostname: whpg-m
-          hostname_alias: whpg-m
+        whpg-cdw:
+          ansible_host: 10.0.15.112
+          ip_address: 10.0.15.112
+          hostname: whpg-cdw
+          hostname_alias: cdw
           whpg_role: coordinator
-        whpg-sm:
-          ansible_host: 10.0.3.228
-          ip_address: 10.0.3.228
-          hostname: whpg-sm
-          hostname_alias: whpg-sm
+        whpg-scdw:
+          ansible_host: 10.0.8.209
+          ip_address: 10.0.8.209
+          hostname: whpg-scdw
+          hostname_alias: scdw
           whpg_role: standby
-        whpg-s1:
-          ansible_host: 10.0.1.224
-          ip_address: 10.0.1.224
-          hostname: whpg-s1
-          hostname_alias: whpg-s1
+        whpg-sdw1:
+          ansible_host: 10.0.3.219
+          ip_address: 10.0.3.219
+          hostname: whpg-sdw1
+          hostname_alias: sdw1
           whpg_role: segment
-        whpg-s2:
-          ansible_host: 10.0.14.16
-          ip_address: 10.0.14.16
-          hostname: whpg-s2
-          hostname_alias: whpg-s2
+        whpg-sdw2:
+          ansible_host: 10.0.14.73
+          ip_address: 10.0.14.73
+          hostname: whpg-sdw2
+          hostname_alias: sdw2
           whpg_role: segment
 
 # whpg_role: coordinator
 coordinator:
   hosts:
-    whpg-m:
+    whpg-cdw:
 
 # whpg_role: standby
 standby_coordinator:
   hosts:
-    whpg-sm:
+    whpg-scdw:
 
 # whpg_role: segment
 segments:
   hosts:
-    whpg-s1:
-    whpg-s2:
+    whpg-sdw1:
+    whpg-sdw2:
