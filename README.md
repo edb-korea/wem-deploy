@@ -79,7 +79,7 @@ WEM 1.2/1.3 이 있으면 먼저 지우고 1.4 를 설치합니다(3-1절).
 
 - 마지막 `Summary` 와 `Show service states` 출력에서 서비스가 모두 `active` 인지 확인합니다.
 - WEM 화면(`http://<WEM host IP>:8080/`)의 **Management > Host Agents** 에서 모든 노드가 approved 인지 확인합니다.
-  자동 승인이 안 된 노드가 있으면 화면에서 승인한 뒤 `ansible-playbook playbooks/wem_deploy.yml -t tune,querylogs` 를 실행합니다.
+  자동 승인이 안 된 노드가 있으면 화면에서 승인한 뒤 `ansible-playbook playbooks/wem_deploy.yml -t tune` 을 실행합니다.
 
 ### 업그레이드 (upgrade)
 
@@ -240,8 +240,7 @@ ansible-playbook playbooks/wem_deploy.yml
 6. WEM 1.4 설치와 `wem.conf` 구성 (WEM host)
 7. Host Agent 와 otelcol 설치, otelcol 조정 파일(`config_local.yaml`) 선적용, `join-token` 선등록으로 **자동 승인** (전 노드)
 8. WEM 이 배포한 otelcol 설정과 병합 검사, 필요할 때만 otelcol 재시작
-9. ClickHouse Coordinator Query Logs 객체 생성
-10. 서비스 상태 확인
+9. 서비스 상태 확인
 
 ### 3-2. 관련 rpm 업그레이드
 
@@ -336,7 +335,6 @@ ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml
 | `wem_whpg_resource_group_options` | CONCURRENCY 20, CPU_MAX_PERCENT 10 | `wem_group` resource group 설정 |
 | `wem_extra_conf_lines` | `[]` | `wem.conf` 에 줄을 추가 (예: `LOG_SCAN_ENABLED=false`) |
 | `clickhouse_data_dir` | 비움 | ClickHouse 데이터를 다른 디스크에 둘 때 |
-| `coordinator_query_logs_ttl_days` | `90` | Query Logs 보관 일수 |
 
 ## 6. 변수 레퍼런스
 
@@ -462,23 +460,14 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
   --config=file:/etc/edb/otelcol/config.yaml --config=file:/etc/edb/otelcol/config_local.yaml
 ```
 
-### 6-7. Coordinator Query Logs (`09-query-logs.yml`)
-
-| 변수 | 기본값 | 설명 |
-|---|---|---|
-| `coordinator_query_logs_enabled` | `true` | ClickHouse 객체(상태 테이블, Materialized View, View) 생성 여부 |
-| `coordinator_query_logs_recreate` | `false` | `true` 면 기존 객체를 삭제하고 다시 생성 (수집된 데이터도 삭제됨) |
-| `coordinator_query_logs_ttl_days` | `90` | 상태 테이블 TTL(일) |
-| `coordinator_query_logs_wait_seconds` | `300` | `otel_logs` 테이블이 생길 때까지 기다리는 최대 시간(초). 초과하면 건너뜀 |
-
-### 6-8. rpm 업그레이드 (`upgrade.yml`)
+### 6-7. rpm 업그레이드 (`upgrade.yml`)
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `wem_upgrade_packages_wem_host` | `whpg-enterprise-manager`, `edb-clickhouse-server`, `edb-clickhouse-client` | WEM host 에서 최신 버전으로 올릴 패키지 |
 | `wem_upgrade_packages_all_hosts` | `edb-acp-host-agent`, `edb-otelcol` | 모든 노드에서 최신 버전으로 올릴 패키지 |
 
-### 6-9. WEM 1.4 삭제 (`remove-wem14.yml`)
+### 6-8. WEM 1.4 삭제 (`remove-wem14.yml`)
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -504,12 +493,11 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 | `wem` | `06-wem.yml` | WEM 1.4 설치와 `wem.conf` |
 | `agent` | `07-host-agent.yml` | Host Agent, otelcol 설치, otelcol 조정 선적용, 자동 승인 |
 | `tune` | `08-otelcol-tune.yml` | otelcol 설정 검사와 반영 |
-| `querylogs` | `09-query-logs.yml` | ClickHouse Coordinator Query Logs 객체 |
 | `upgrade` | `upgrade.yml` | 관련 rpm 을 repo 최신 버전으로 업그레이드 (`-t upgrade` 를 지정할 때만) |
 | `remove` | `remove-wem14.yml` | WEM 1.4 삭제 (`wem_uninstall.yml` 에서만) |
 
 ```bash
-ansible-playbook playbooks/wem_deploy.yml -t tune,querylogs
+ansible-playbook playbooks/wem_deploy.yml -t tune
 ansible-playbook playbooks/wem_deploy.yml --list-tasks            # 실행될 태스크 목록만 확인
 ```
 
@@ -518,7 +506,7 @@ ansible-playbook playbooks/wem_deploy.yml --list-tasks            # 실행될 �
 - `agent` 는 `wem` 단계가 만든 join secret 을 쓰므로 **`-t wem,agent` 로 함께** 실행합니다. `-t agent` 만으로는 secret 이 없어 동작하지 않습니다.
 - `-t wem` 을 다시 실행하면 join secret 과 cookie secret 이 새로 만들어지고 WEM 이 재시작됩니다. 에이전트의 `join-token` 도 같이 갱신하려면 `-t wem,agent` 로 실행합니다.
 - `tune` 의 조정 값은 `config_local.yaml` 에 있으므로 WEM 이 `config.yaml` 을 다시 배포하거나 `acp-host-agent` 를 재시작해도 유지됩니다. 조정 값을 바꾼 경우에만 `-t tune` 으로 다시 적용합니다.
-- 에이전트가 자동 승인되지 않으면(WEM 화면 Management > Host Agents 에서 수동 승인한 뒤) `-t tune,querylogs` 로 이어서 실행합니다.
+- 에이전트가 자동 승인되지 않으면(WEM 화면 Management > Host Agents 에서 수동 승인한 뒤) `-t tune` 으로 이어서 실행합니다.
 
 ## 8. 설치 후 확인과 접속 방법
 
@@ -548,7 +536,6 @@ clickhouse-client --host <WEM host IP> --user default --password
 SHOW DATABASES;                                -- acp_observability 가 보여야 함
 USE acp_observability;
 SHOW TABLES;
-SELECT * FROM coordinator_query_logs LIMIT 5;
 ```
 
 ### 8-4. WEM 상태 DB 접속
@@ -563,7 +550,7 @@ SELECT * FROM coordinator_query_logs LIMIT 5;
 | `generate_inventory.yml` 이 `primary coordinator 가 없습니다` 로 중단 | 메시지의 "서버별 원인"을 봅니다. `SSH 실패 - Permission denied` 면 그 서버가 받는 키가 `ansible_ssh_common_args` 의 `IdentityFile` 에 없음(키 추가) 또는 계정이 다름(`ansible_user`). `recovery 상태(standby)` 만 있으면 VIP 가 standby 에 붙어 있거나 failover 된 상태. `whpg_coordinator_hosts` 의 coordinator 를 현재 primary coordinator 로 고치거나 `-e whpg_coordinator=<IP>` 로 지정 |
 | `wemon` 로그인 실패 (`does not have a valid SCRAM verifier`) | 비밀번호가 md5 로 저장됨. `-t statedb` 를 다시 실행하면 SCRAM 으로 다시 설정 |
 | `Timeout when waiting for 127.0.0.1:5433` (`wem_state_install=true`) | SELinux 가 PostgreSQL 에 허용한 포트는 5432 와 9898 뿐. 이 role 이 `semanage port` 로 자동 허용하지만, 수동으로는 `semanage port -a -t postgresql_port_t -p tcp 5433` |
-| Host Agent 로그에 `awaiting TLS material` | 자동 승인이 안 됨. `join-token` 이 `acp-host-agent` 계정 소유 0600 이어야 한다. 안 되면 WEM 화면에서 수동 승인한 뒤 `-t tune,querylogs` |
+| Host Agent 로그에 `awaiting TLS material` | 자동 승인이 안 됨. `join-token` 이 `acp-host-agent` 계정 소유 0600 이어야 한다. 안 되면 WEM 화면에서 수동 승인한 뒤 `-t tune` |
 | `wem_use_vip=true 인데 조건이 맞지 않습니다` | VIP 가 비어 있거나, standby 가 없거나, VIP 가 coordinator 에 올라와 있지 않음. `wem_use_vip` 없이 실행 |
 | 그래프가 비어 있음 | 8-1절 참고 (데이터 부족). Gap 과 시간 범위를 줄인다 |
 | coordinator 로그에 `unexpected EOF on client connection` 오류, Host Agent 로그에 `whpg-helper ... unexpected COPY_IN result` | WEM 로그 스캔이 `COPY ... FROM STDIN` 을 섞어 보내는데 WHPG 7 의 `psql`(12.12)이 처리하지 못함. 임시 방법은 `wem_extra_conf_lines: ["LOG_SCAN_ENABLED=false"]` 이지만 **효과는 아직 확인하지 못함** |
@@ -601,12 +588,9 @@ roles/warehouse-pg-wem/
 │   ├── 07-host-agent.yml        # agent       Host Agent, otelcol 설치, otelcol 조정 선적용, 자동 승인
 │   ├── 08-otelcol-tune.yml      # tune        otelcol 설정 검사 (WEM 배포 후 validate, 변경 시 재시작)
 │   ├── otelcol-local-config.yml # (07, 08 에서 호출) config_local.yaml + edb-otelcol.conf 적용
-│   ├── 09-query-logs.yml        # querylogs   Coordinator Query Logs 객체
 │   ├── upgrade.yml              # upgrade     관련 rpm 최신 버전으로 업그레이드 (-t upgrade 지정 시에만)
 │   ├── 10-summary.yml           # (always)    서비스 상태 확인
 │   └── remove-wem14.yml         # remove      WEM 1.4 삭제 (wem_uninstall.yml 이 호출)
-├── files/
-│   └── query_logs_*.sql         # Coordinator Query Logs 객체 SQL
 └── templates/
     ├── wem.conf.j2              # WEM 설정 파일
     └── otelcol_config_local.yaml.j2  # otelcol override (config_local.yaml)
@@ -620,7 +604,6 @@ roles/warehouse-pg-wem/
 
 - **웹 포털 HTTPS 는 구성하지 않습니다.** 공식 설정 참조에 웹 포털 HTTPS 를 켜는 파라미터가 없어 HTTP 와 `WEM_INSECURE_COOKIES=1` 로 구성합니다. 이 때문에 WEM 화면의 클립보드 기능(예: Copy Query)이 제한될 수 있습니다.
 - **로그 스캔 오류**: 9절의 `unexpected COPY_IN result` 가 발생할 수 있습니다. WEM 1.4 와 WHPG 7 의 `psql` 호환 문제로 보입니다.
-- **`DurationMs` 가 `NULL`**: coordinator 의 `log_min_duration_statement` 가 꺼져 있으면 Query Logs 의 `DurationMs` 가 비어 있습니다. 이 playbook 은 해당 설정을 바꾸지 않습니다.
 - **coordinator failover 와 DB 메트릭**: 기본으로 DB 메트릭(`sqlquery`)을 standby 의 otelcol 이 coordinator 실 IP 로 수집합니다(주의 2). coordinator 서버가 내려가 standby 가 승격되면 이 접속이 끊기므로, failover 후에도 이어서 수집하려면 VIP 와 `wem_use_vip=true` 를 씁니다.
 
 ### 검증 현황
