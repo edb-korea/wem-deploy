@@ -21,7 +21,6 @@
 #   06-wem.yml               wem          WEM 1.4 설치
 #   07-host-agent.yml        agent        Host Agent + otelcol 설치
 #   08-otelcol-tune.yml      tune         otelcol 설정 조정
-#   09-query-logs.yml        querylogs    ClickHouse Coordinator Query Logs 객체
 #   upgrade.yml              upgrade      관련 RPM 최신 버전으로 업그레이드 (-t upgrade 지정 시에만)
 #   10-summary.yml           (always)     서비스 상태 확인
 # =============================================================================
