@@ -19,6 +19,92 @@ WEM 1.2 가 있으면 지우고 1.4 로 전환합니다. WHPG 자체의 설치�
 
 `wem_deploy.yml` 과 `wem_uninstall.yml` 은 **확인 질문 없이 바로 삭제를 시작**합니다. 실행하기 전에 [10. 운영 환경 적용 전 점검](#10-운영-환경-적용-전-점검)을 확인합니다.
 
+## 0-1. 수행 순서
+
+모든 명령은 이 디렉터리(`ansible.cfg` 가 있는 곳)에서 실행합니다. 각 단계의 자세한 내용은 괄호 안의 절을 참고합니다.
+
+### 처음 설치 (deploy)
+
+**1단계. 사전 준비 확인** (2-2절, 2-3절)
+
+- 관리 서버에서 모든 노드로 비밀번호 없이 SSH 접속이 되어야 합니다.
+- 모든 노드에서 WEM 관련 패키지를 받을 수 있는 yum/dnf repo 가 구성되어 있어야 합니다.
+
+**2단계. `inventory/cluster_vars.yml` 에 대상 클러스터 정보 수정** (2-4절)
+
+```yaml
+whpg_coordinator_hosts:                     # inventory 를 만들 때 접속할 서버 (순서대로 시도)
+    - { ip: "10.0.3.8", hostname: "whpg-vip" }  # VIP
+    - { ip: "10.0.3.8", hostname: "whpg-m" }    # coordinator
+ansible_ssh_common_args: "-o IdentityFile=~/.ssh/id_rsa"   # 노드 접속 키 (여러 개면 IdentityFile 을 이어서 적음)
+whpg_coordinator_data_directory: "/data/coordinator/gpseg-1"
+whpg_default_database: "gpadmin"
+whpg_vip_cidr: "10.0.8.209/24"              # VIP 가 없으면 비움
+```
+
+`hostname` 은 실제 서버의 hostname 과 같아야 합니다. 다르면 다른 클러스터에 잘못 접속한 것으로 보고 중단합니다.
+매번 같은 값으로 쓸 WEM 변수(`wem_port`, 비밀번호 등)도 여기에 함께 적을 수 있습니다(4절).
+
+**3단계. `inventory.yml` 생성과 접속 확인** (2-4절)
+
+```bash
+ansible-playbook playbooks/generate_inventory.yml
+ansible all -m ping
+```
+
+만들어진 `inventory.yml` 에서 노드 목록과 `whpg_role`(coordinator / standby / segment)이 맞는지 확인합니다.
+WEM 은 standby 가 있으면 standby, 없으면 coordinator 에 설치됩니다.
+
+**4단계. WEM 설치**
+
+```bash
+ansible-playbook playbooks/wem_deploy.yml                       # 기본
+ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true   # standby 의 DB 메트릭 수집을 VIP 로 접속 (HA 환경)
+ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml       # 비밀번호 등을 파일로 지정 (4절)
+```
+
+WEM 1.2 가 있으면 먼저 지우고 1.4 를 설치합니다(3-1절).
+
+**5단계. 설치 확인** (8절)
+
+- 마지막 `Summary` 와 `Show service states` 출력에서 서비스가 모두 `active` 인지 확인합니다.
+- WEM 화면(`http://<WEM host IP>:8080/`)의 **Management > Host Agents** 에서 모든 노드가 approved 인지 확인합니다.
+  자동 승인이 안 된 노드가 있으면 화면에서 승인한 뒤 `ansible-playbook playbooks/wem_deploy.yml -t tune,querylogs` 를 실행합니다.
+
+### 업그레이드 (upgrade)
+
+설치되어 있는 WEM, ClickHouse, Host Agent, otelcol rpm 을 repo 의 최신 버전으로 올립니다(3-2절).
+
+```bash
+ansible-playbook playbooks/wem_deploy.yml -t upgrade --check   # 1) 설치 버전과 repo 최신 버전, 업그레이드 대상 확인 (변경 없음)
+ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 2) 업그레이드, 올라간 서비스만 재시작
+```
+
+1) 의 `Show upgrade plan` 출력에서 `-> 업그레이드 대상` 으로 표시된 패키지와 버전을 확인한 뒤 2) 를 실행합니다.
+마이너 버전이 바뀌는 경우(예: WEM 1.4.0 → 1.5.0)에는 릴리스 노트를 먼저 확인합니다.
+업그레이드 후에는 5단계와 같이 서비스 상태와 Host Agents 화면을 확인합니다.
+
+### 삭제 (uninstall)
+
+WEM 1.4 와 ClickHouse, Host Agent, otelcol, WHPG 의 WEM 계정 / DB 를 지웁니다(3-3절). WHPG 본체는 지우지 않습니다.
+
+```bash
+ansible-playbook playbooks/wem_uninstall.yml
+```
+
+마지막 출력에서 rpm, 서비스, 포트, WHPG 의 DB / 계정이 남지 않았는지 확인합니다.
+
+### 설정을 바꿔 다시 설치할 때
+
+```bash
+ansible-playbook playbooks/wem_uninstall.yml          # 1) 기존 WEM 삭제 (Host Agent 인증 정보도 정리)
+vi inventory/cluster_vars.yml                         # 2) 필요하면 클러스터 정보 / 변수 수정
+ansible-playbook playbooks/generate_inventory.yml     # 3) cluster_vars.yml 을 고쳤으면 inventory.yml 다시 생성
+ansible-playbook playbooks/wem_deploy.yml             # 4) 다시 설치
+```
+
+otelcol 조정 값처럼 일부 단계만 다시 적용하면 되는 경우에는 삭제하지 않고 해당 tag 만 실행합니다(7절, 예: `-t tune`).
+
 ## 1. 디렉터리 구성
 
 ```
