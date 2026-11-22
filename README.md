@@ -259,6 +259,9 @@ ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 확인 후 업�
 
 - 이미 설치된 패키지만 올립니다(새로 설치하지 않음). 대상 목록은 `wem_upgrade_packages_wem_host`, `wem_upgrade_packages_all_hosts` 로 바꿉니다.
 - `wem.conf`, `config.yaml`, `edb-otelcol.conf` 는 rpm 의 `%config(noreplace)` 이고 `config_local.yaml` 은 rpm 소유가 아니므로 설정은 유지됩니다.
+- **WEM 1.6 부터 `wem.conf` 위치가 `/etc/edb/wem/wem.conf` 로 바뀝니다.** 1.6 rpm 이 기존 값을 옮기고 옛 파일은 `/etc/wem/wem.conf.rpmsave` 로 남깁니다.
+  이 role 은 `wem` 서비스 unit 에서 경로를 찾아 쓰며(`wem_config_file` 비움), 업그레이드 뒤 그 파일에 `WEM_AGENT_JOIN_SECRET` 이 있는지 확인합니다.
+- 업그레이드할 때도 각 노드의 Host Agent 인증서를 지금 WEM 으로 검증하고, 이전 WEM 설치에서 남은 인증서면 백업 후 지우고 다시 등록합니다(`host_agent_reset_stale_state`). `--check` 의 `Summary` 에 대상 노드가 나옵니다.
 - **repo 의 최신 버전으로 올라가므로 마이너 버전이 바뀔 수 있습니다** (예: WEM 1.4.0 → 1.5.0). 먼저 `--check` 로 대상 버전을 확인합니다.
 - 업그레이드한 뒤에도 일반 설치 실행은 WEM 을 `wem14_package` 의 고정 버전으로 내리지 않습니다(설치된 버전이 같거나 높으면 설치 건너뜀).
 
@@ -396,8 +399,8 @@ ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `wem14_package` | `whpg-enterprise-manager-1.4.0` | 설치할 WEM 패키지 (버전 고정) |
-| `wem_config_file` | `/etc/wem/wem.conf` | WEM 설정 파일 경로 |
-| `wem_unix_group` | `gpadmin` | `wem.conf` 의 그룹 |
+| `wem_config_file` | `""` (자동) | WEM 설정 파일 경로. 비우면 `wem` 서비스 unit 의 `EnvironmentFile` 을 쓴다 (WEM 1.4: `/etc/wem/wem.conf`, 1.6 이상: `/etc/edb/wem/wem.conf`). unit 이 없으면 `wem_config_file_default`(`/etc/wem/wem.conf`) |
+| `wem_unix_group` | `""` (자동) | `wem.conf` 의 그룹. 비우면 `wem` 서비스의 `Group` (1.6: `wem`), 없으면 `wem_unix_group_default`(`gpadmin`) |
 | `wem_insecure_cookies` | `"1"` | HTTP 로 접속하므로 쿠키 허용. 웹 포털 HTTPS 설정 파라미터는 공식 설정 참조에 없어 구성하지 않음 |
 | `wem_high_load_mode` | `""` | 대규모 환경이면 `"true"` (`HIGH_LOAD_MODE`) |
 | `wem_pool_max_conns` | `"40"` | WEM DB 연결 풀 최대 연결 수 (`WEM_POOL_MAX_CONNS`). `""` 이면 넣지 않음 |
@@ -414,6 +417,10 @@ ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml
 | `host_agent_conf` | `/etc/edb/acp-host-agent/acp-host-agent.conf` | Host Agent 설정 파일 |
 | `host_agent_join_token_file` | `/etc/edb/acp-host-agent/join-token` | 자동 승인용 토큰 파일 |
 | `host_agent_user` | `acp-host-agent` | 서비스 계정. `join-token` 의 소유자 |
+| `host_agent_id_file` | `/etc/edb/acp-host-agent/agent-id` | Host Agent ID 파일 |
+| `host_agent_tls_dir` | `/var/lib/edb/acp-host-agent/tls` | WEM 이 발급한 Host Agent 인증서 (`current/bundle.pem` 이 신뢰하는 WEM CA) |
+| `host_agent_reset_stale_state` | `true` | Host Agent 인증서가 지금 WEM 이 발급한 것이 아니면(이전 WEM 설치에서 남음) 백업 후 인증서 / `agent-id` / `join-token` 을 지우고 다시 등록 (`07-host-agent`, `upgrade`) |
+| `host_agent_backup_dir` | `/root` | 위 정리 전에 `acp-host-agent-backup-<시각>.tgz` 를 만드는 위치 |
 
 ### 6-6. otelcol 설정 조정 (`otelcol-local-config.yml`, `08-otelcol-tune.yml`)
 
@@ -550,6 +557,7 @@ SHOW TABLES;
 | `generate_inventory.yml` 이 `primary coordinator 가 없습니다` 로 중단 | 메시지의 "서버별 원인"을 봅니다. `SSH 실패 - Permission denied` 면 그 서버가 받는 키가 `ansible_ssh_common_args` 의 `IdentityFile` 에 없음(키 추가) 또는 계정이 다름(`ansible_user`). `recovery 상태(standby)` 만 있으면 VIP 가 standby 에 붙어 있거나 failover 된 상태. `whpg_coordinator_hosts` 의 coordinator 를 현재 primary coordinator 로 고치거나 `-e whpg_coordinator=<IP>` 로 지정 |
 | `wemon` 로그인 실패 (`does not have a valid SCRAM verifier`) | 비밀번호가 md5 로 저장됨. `-t statedb` 를 다시 실행하면 SCRAM 으로 다시 설정 |
 | `Timeout when waiting for 127.0.0.1:5433` (`wem_state_install=true`) | SELinux 가 PostgreSQL 에 허용한 포트는 5432 와 9898 뿐. 이 role 이 `semanage port` 로 자동 허용하지만, 수동으로는 `semanage port -a -t postgresql_port_t -p tcp 5433` |
+| WEM 화면의 Host Agents 에 일부 노드가 없고, 그 노드의 `/var/log/edb/acp-host-agent/acp-host-agent.log` 에 `invalid peer certificate: BadSignature` | 이전 WEM 설치에서 받은 인증서가 남아 있음 (WEM 을 다시 설치할 때 inventory 에 없던 노드, 예: 나중에 추가한 segment). `-t agent` 또는 `-t upgrade` 를 실행하면 자동으로 백업 후 정리하고 다시 등록 (`host_agent_reset_stale_state`). segment 를 추가하면 먼저 `generate_inventory.yml` 로 inventory 를 다시 만든다 |
 | Host Agent 로그에 `awaiting TLS material` | 자동 승인이 안 됨. `join-token` 이 `acp-host-agent` 계정 소유 0600 이어야 한다. 안 되면 WEM 화면에서 수동 승인한 뒤 `-t tune` |
 | `wem_use_vip=true 인데 조건이 맞지 않습니다` | VIP 가 비어 있거나, standby 가 없거나, VIP 가 coordinator 에 올라와 있지 않음. `wem_use_vip` 없이 실행 |
 | 그래프가 비어 있음 | 8-1절 참고 (데이터 부족). Gap 과 시간 범위를 줄인다 |
@@ -588,6 +596,8 @@ roles/warehouse-pg-wem/
 │   ├── 07-host-agent.yml        # agent       Host Agent, otelcol 설치, otelcol 조정 선적용, 자동 승인
 │   ├── 08-otelcol-tune.yml      # tune        otelcol 설정 검사 (WEM 배포 후 validate, 변경 시 재시작)
 │   ├── otelcol-local-config.yml # (07, 08 에서 호출) config_local.yaml + edb-otelcol.conf 적용
+│   ├── wem-facts.yml            # (06, 07, upgrade 에서 호출) wem.conf 경로 / 그룹, join secret 확인
+│   ├── host-agent-stale-reset.yml # (07, upgrade 에서 호출) 이전 WEM 설치에서 남은 Host Agent 인증서 정리
 │   ├── upgrade.yml              # upgrade     관련 rpm 최신 버전으로 업그레이드 (-t upgrade 지정 시에만)
 │   ├── 10-summary.yml           # (always)    서비스 상태 확인
 │   └── remove-wem14.yml         # remove      WEM 1.4 삭제 (wem_uninstall.yml 이 호출)

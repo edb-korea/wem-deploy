@@ -169,9 +169,14 @@ clickhouse_packages:
 # ----------------------------------------------------------------------------
 # WEM 패키지 (버전 고정)
 wem14_package: "whpg-enterprise-manager-1.4.0"
-wem_config_file: "/etc/wem/wem.conf"
-# wem.conf 의 그룹 (WEM 서비스가 읽을 수 있어야 함)
-wem_unix_group: "gpadmin"
+# WEM 설정 파일 경로. 비워 두면 wem 서비스(systemd unit)의 EnvironmentFile 에서 찾는다
+#   WEM 1.4: /etc/wem/wem.conf, WEM 1.6 이상: /etc/edb/wem/wem.conf (1.6 rpm 이 옛 파일을 wem.conf.rpmsave 로 옮긴다)
+#   unit 이 아직 없으면(--check 에서 설치 전) wem_config_file_default 를 쓴다
+wem_config_file: ""
+wem_config_file_default: "/etc/wem/wem.conf"
+# wem.conf 의 그룹 (WEM 서비스가 읽을 수 있어야 함). 비워 두면 wem 서비스의 Group (1.6: wem), 없으면 wem_unix_group_default
+wem_unix_group: ""
+wem_unix_group_default: "gpadmin"
 
 # 웹 포털을 HTTPS 로 제공하지 않으므로 쿠키 허용 (HTTP 테스트 환경 전용).
 # 공식 설정 참조에 웹 포털 HTTPS 파라미터가 없어 HTTPS 는 구성하지 않는다.
@@ -200,6 +205,14 @@ host_agent_conf: "/etc/edb/acp-host-agent/acp-host-agent.conf"
 host_agent_join_token_file: "/etc/edb/acp-host-agent/join-token"
 # acp-host-agent 서비스 계정 (서비스가 join-token 을 이 계정 소유 0600 으로 만들고 이 계정으로 읽는다)
 host_agent_user: "acp-host-agent"
+host_agent_id_file: "/etc/edb/acp-host-agent/agent-id"
+# Host Agent 가 WEM 에서 받은 인증서 (current/bundle.pem 이 신뢰하는 WEM CA)
+host_agent_tls_dir: "/var/lib/edb/acp-host-agent/tls"
+# true: Host Agent 의 인증서가 지금 WEM 이 발급한 것이 아니면 (이전 WEM 설치에서 남은 인증서, agent 로그에 BadSignature)
+#   agent 를 멈추고 인증서 / agent-id / join-token 을 지운 뒤 다시 등록시킨다 [07-host-agent, upgrade]
+#   지우기 전에 host_agent_backup_dir 에 /etc/edb/acp-host-agent 와 /var/lib/edb/acp-host-agent 를 tar.gz 로 백업한다
+host_agent_reset_stale_state: true
+host_agent_backup_dir: "/root"
 
 
 # ----------------------------------------------------------------------------
@@ -299,3 +312,5 @@ remove_paths_wem_host:
 remove_paths_wem14_only:
   - /etc/wem
   - /var/log/wem
+  - /etc/edb/wem
+  - /var/log/edb/wem

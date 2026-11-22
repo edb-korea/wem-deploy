@@ -22,6 +22,12 @@
         _wem_installed_ver.rc != 0
         or not (_wem_installed_ver.stdout | trim) is version(wem14_package | regex_search('[0-9][0-9.]*$') | default('0', true), '>=')
 
+    # wem.conf 위치는 WEM 버전마다 다르다 (1.4: /etc/wem, 1.6 이상: /etc/edb/wem). 설치된 wem 서비스 unit 에서 찾는다
+    - name: Find wem.conf path and group
+      ansible.builtin.import_tasks: wem-facts.yml
+      vars:
+        _wem_facts_read_secret: false
+
     - name: Generate WEM_COOKIE_SECRET
       ansible.builtin.command: openssl rand -hex 32
       register: _cookie_secret
@@ -43,12 +49,12 @@
         wem_join_secret_value: "{{ _join_secret.stdout | trim }}"
       no_log: true
 
-    - name: Write /etc/wem/wem.conf
+    - name: Write wem.conf
       ansible.builtin.template:
         src: wem.conf.j2
-        dest: "{{ wem_config_file }}"
+        dest: "{{ _wem_conf_path }}"
         owner: root
-        group: "{{ wem_unix_group }}"
+        group: "{{ _wem_conf_group }}"
         mode: "0640"
       no_log: true
 
