@@ -1,8 +1,8 @@
 ---
 # =============================================================================
-# 자동 생성 파일 — 직접 수정하지 마세요. (2026-11-22_21:56:27)
+# 자동 생성 파일 — 직접 수정하지 마세요. (2026-10-22_18:29:35)
 #   호스트: 10.0.15.112 의 gp_segment_configuration + /etc/hosts, 각 서버의 실제 hostname
-#   공통 변수: /home/ec2-user/workspace/wem-deploy/inventory/cluster_vars.yml
+#   공통 변수: /home/ec2-user/Ansible/wem_ansible/inventory/cluster_vars.yml
 #   다시 만들기: ansible-playbook playbooks/generate_inventory.yml
 # =============================================================================
 whpg_clusters:
@@ -67,18 +67,6 @@ whpg_clusters:
           hostname: whpg-sdw2
           hostname_alias: sdw2
           whpg_role: segment
-        whpg-sdw3:
-          ansible_host: 10.0.6.109
-          ip_address: 10.0.6.109
-          hostname: whpg-sdw3
-          hostname_alias: sdw3
-          whpg_role: segment
-        whpg-sdw4:
-          ansible_host: 10.0.14.22
-          ip_address: 10.0.14.22
-          hostname: whpg-sdw4
-          hostname_alias: sdw4
-          whpg_role: segment
 
 # whpg_role: coordinator
 coordinator:
@@ -95,5 +83,3 @@ segments:
   hosts:
     whpg-sdw1:
     whpg-sdw2:
-    whpg-sdw3:
-    whpg-sdw4:
