@@ -68,7 +68,7 @@ WEM 은 standby 가 있으면 standby, 없으면 coordinator 에 설치됩니다
 **4단계. WEM 설치**
 
 ```bash
-ansible-playbook playbooks/wem_deploy.yml                       # 기본
+ansible-playbook playbooks/wem_deploy.yml                       # 기본 ( Ver 1.4 설치 구성 )
 ansible-playbook playbooks/wem_deploy.yml -e wem_use_vip=true   # standby 의 DB 메트릭 수집을 VIP 로 접속 (HA 환경)
 ansible-playbook playbooks/wem_deploy.yml -e @my_vars.yml       # 비밀번호 등을 파일로 지정 (4절)
 ```
