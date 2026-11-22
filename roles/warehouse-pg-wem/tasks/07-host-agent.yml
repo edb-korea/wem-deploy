@@ -1,6 +1,11 @@
 ---
 # Host Agent + otelcol 설치, join-token 선등록 (전 노드)
 # tag: agent
+
+# -t agent 로 06-wem 을 건너뛰면 join secret 이 없으므로 WEM host 의 wem.conf 에서 읽는다
+- name: Find wem.conf and the join secret on the WEM host
+  ansible.builtin.import_tasks: wem-facts.yml
+
 - name: Install Host Agent and otelcol
   ansible.builtin.dnf:
     name:
@@ -19,6 +24,10 @@
   loop:
     - { key: "WEM_CONNECT_ADDRESS", value: "{{ wem_host_ip }}:{{ wem_agent_port }}" }
     - { key: "WEM_DATABASE", value: "{{ wem_whpg_database }}" }
+
+# 이전 WEM 설치에서 남은 인증서가 있으면 지우고 다시 등록하게 한다 (나중에 inventory 에 추가된 노드 등)
+- name: Reset Host Agent state left by a previous WEM install
+  ansible.builtin.import_tasks: host-agent-stale-reset.yml
 
 # 에이전트는 최초 기동 시 join-token을 스스로 생성하므로, 기동 전에
 # WEM_AGENT_JOIN_SECRET과 같은 값으로 미리 써 두어 수동 승인 없이 등록되게 한다.
