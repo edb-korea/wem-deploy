@@ -167,6 +167,7 @@ ansible -i inventory.yml all -m ping
 |---|---|
 | WEM host (standby, 없으면 coordinator) | `whpg-enterprise-manager-1.4.0`, `edb-clickhouse-server`, `edb-clickhouse-client` (`edb-clickhouse-common-static` 의존) |
 | 전 노드 | `edb-acp-host-agent`, `edb-otelcol` |
+| (WEM 1.6 이상일 때) 전 노드 | `edb-whpg7-live-query-plan` (3-4절) |
 | (`wem_state_install=true` 일 때) WEM host | `postgresql-server`, `postgresql-contrib`, `policycoreutils-python-utils` |
 
 ```bash
@@ -264,6 +265,7 @@ ansible-playbook playbooks/wem_deploy.yml -t upgrade           # 확인 후 업�
 - 업그레이드할 때도 각 노드의 Host Agent 인증서를 지금 WEM 으로 검증하고, 이전 WEM 설치에서 남은 인증서면 백업 후 지우고 다시 등록합니다(`host_agent_reset_stale_state`). `--check` 의 `Summary` 에 대상 노드가 나옵니다.
 - **repo 의 최신 버전으로 올라가므로 마이너 버전이 바뀔 수 있습니다** (예: WEM 1.4.0 → 1.5.0). 먼저 `--check` 로 대상 버전을 확인합니다.
 - 업그레이드한 뒤에도 일반 설치 실행은 WEM 을 `wem14_package` 의 고정 버전으로 내리지 않습니다(설치된 버전이 같거나 높으면 설치 건너뜀).
+- **업그레이드로 WEM 이 1.6 이상이 되면 이어서 live query plan 을 구성하며, 이때 WHPG 클러스터가 재시작될 수 있습니다**(3-4절). `--check` 출력에서 `WHPG 클러스터 재시작 예정` 이 나오는지 먼저 확인합니다.
 
 ### 3-3. WEM 1.4 삭제
 
@@ -282,6 +284,27 @@ WHPG 본체, WEM 1.2/1.3(Prometheus/Loki/Alloy), `/etc/edb/pgaa` 는 지우지 �
 - 마지막에 rpm, 서비스, 포트, WHPG 의 DB / 계정 / resource group 이 남았는지 출력합니다.
 
 이전 1.4 의 Host Agent 인증 정보가 남아 있으면 재설치할 때 등록이 꼬일 수 있어서, 1.4 를 다시 설치하기 전에는 이 playbook 을 먼저 실행합니다.
+
+### 3-4. Live query plan (WEM 1.6 이상)
+
+WEM host 의 `whpg-enterprise-manager` 가 **1.6 이상**(`wem_live_query_plan_min_version`)이면 일반 설치 실행과 `-t upgrade` 실행의 끝(`10-summary` 전)에 아래를 수행합니다. 1.6 미만이면 건너뜁니다.
+`--check` 에서 WEM 설치 / 업그레이드가 예정되어 있으면 예정 버전으로 판단합니다.
+
+```bash
+ansible-playbook playbooks/wem_deploy.yml -t liveplan --check   # 무엇이 바뀌는지, 재시작이 필요한지 확인
+ansible-playbook playbooks/wem_deploy.yml -t liveplan           # 이 단계만 실행
+```
+
+1. 모든 노드에 `edb-whpg7-live-query-plan` rpm 설치
+2. coordinator 에서 `gp_segment_configuration` 의 모든 호스트에 `whpg_live_query_plan.so` 가 있는지 확인 (하나라도 없으면 설정을 바꾸지 않고 중단. `--limit` 로 일부만 실행한 경우 등)
+3. `gpconfig` 로 `shared_preload_libraries` 끝에 `whpg_live_query_plan` 추가 (기존 값 유지), `gp_enable_query_metrics = on`
+   `shared_preload_libraries` 값이 instance 마다 다르면 덮어쓰지 않고 중단합니다.
+4. 실행 중인 값에 아직 반영되지 않았으면 **WHPG 클러스터 재시작** (`gpstop -a -r -M fast`, `live_query_plan_restart_mode`). 실행 중인 트랜잭션은 롤백되고 세션은 끊깁니다
+5. `wem_live_query_plan_databases`(기본 `wem_whpg_database`)에 `CREATE EXTENSION IF NOT EXISTS whpg_live_query_plan`
+6. `shared_preload_libraries`, `gp_enable_query_metrics`, extension 버전 출력
+
+이미 모두 반영되어 있으면 재시작하지 않습니다. 이 단계를 끄려면 `-e wem_live_query_plan=false` 로 실행합니다.
+`wem_uninstall.yml` 은 이 rpm / extension / 설정을 되돌리지 않습니다(WHPG 재시작이 필요하므로 직접 처리).
 
 ## 4. 변수 지정 방법
 
@@ -474,6 +497,17 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 | `wem_upgrade_packages_wem_host` | `whpg-enterprise-manager`, `edb-clickhouse-server`, `edb-clickhouse-client` | WEM host 에서 최신 버전으로 올릴 패키지 |
 | `wem_upgrade_packages_all_hosts` | `edb-acp-host-agent`, `edb-otelcol` | 모든 노드에서 최신 버전으로 올릴 패키지 |
 
+### 6-7-1. Live query plan (`09-live-query-plan.yml`)
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `wem_live_query_plan` | `true` | `false` 면 이 단계를 건너뜀 |
+| `wem_live_query_plan_min_version` | `"1.6"` | WEM host 의 `whpg-enterprise-manager` 가 이 버전 이상일 때만 수행 |
+| `live_query_plan_package` | `edb-whpg7-live-query-plan` | 모든 노드에 설치할 rpm |
+| `live_query_plan_extension` | `whpg_live_query_plan` | extension 이름이자 `shared_preload_libraries` 에 넣는 라이브러리 이름 |
+| `wem_live_query_plan_databases` | `["{{ wem_whpg_database }}"]` | `CREATE EXTENSION` 할 데이터베이스 (없는 DB 가 있으면 실패) |
+| `live_query_plan_restart_mode` | `fast` | 설정 반영을 위한 재시작 방식 (`gpstop -a -r -M <값>`) |
+
 ### 6-8. WEM 1.4 삭제 (`remove-wem14.yml`)
 
 | 변수 | 기본값 | 설명 |
@@ -501,6 +535,7 @@ WEM 이 배포한 `config.yaml` 은 `acp-host-agent` 를 재시작하면 다시 
 | `agent` | `07-host-agent.yml` | Host Agent, otelcol 설치, otelcol 조정 선적용, 자동 승인 |
 | `tune` | `08-otelcol-tune.yml` | otelcol 설정 검사와 반영 |
 | `upgrade` | `upgrade.yml` | 관련 rpm 을 repo 최신 버전으로 업그레이드 (`-t upgrade` 를 지정할 때만) |
+| `liveplan` | `09-live-query-plan.yml` | WEM 1.6 이상: live query plan rpm, preload / `gp_enable_query_metrics`, extension (**WHPG 재시작 가능**, `-t upgrade` 에서도 실행) |
 | `remove` | `remove-wem14.yml` | WEM 1.4 삭제 (`wem_uninstall.yml` 에서만) |
 
 ```bash
@@ -575,6 +610,7 @@ SHOW TABLES;
 - WEM 은 standby(없으면 coordinator)에 설치됩니다.
 - 모든 노드에서 `dnf info whpg-enterprise-manager-1.4.0 edb-acp-host-agent edb-otelcol edb-clickhouse-server` 로 패키지를 받을 수 있는지 확인합니다(repo 는 이 Ansible 이 구성하지 않음).
 - DB 메트릭은 기본으로 standby 에서 수집합니다(주의 2). VIP HA 환경이면 `wem_use_vip=true` 로 실행해 failover 후에도 VIP 로 계속 수집하게 합니다.
+- WEM 1.6 이상이면 live query plan 구성을 위해 **WHPG 클러스터를 확인 질문 없이 재시작**합니다(3-4절). 업무 시간에는 `-e wem_live_query_plan=false` 로 실행하거나 먼저 `-t liveplan --check` 로 확인합니다.
 - 확인 질문 없이 삭제가 시작되므로 대상 서버가 맞는지 `ansible all -m ping` 과 `--list-tasks` 로 먼저 봅니다.
 
 ## 11. role 구성
@@ -599,6 +635,7 @@ roles/warehouse-pg-wem/
 │   ├── wem-facts.yml            # (06, 07, upgrade 에서 호출) wem.conf 경로 / 그룹, join secret 확인
 │   ├── host-agent-stale-reset.yml # (07, upgrade 에서 호출) 이전 WEM 설치에서 남은 Host Agent 인증서 정리
 │   ├── upgrade.yml              # upgrade     관련 rpm 최신 버전으로 업그레이드 (-t upgrade 지정 시에만)
+│   ├── 09-live-query-plan.yml   # liveplan    WEM 1.6 이상: live query plan rpm + preload + extension (WHPG 재시작 가능)
 │   ├── 10-summary.yml           # (always)    서비스 상태 확인
 │   └── remove-wem14.yml         # remove      WEM 1.4 삭제 (wem_uninstall.yml 이 호출)
 └── templates/
