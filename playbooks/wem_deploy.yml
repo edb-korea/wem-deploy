@@ -22,6 +22,7 @@
 #   07-host-agent.yml        agent        Host Agent + otelcol 설치
 #   08-otelcol-tune.yml      tune         otelcol 설정 조정
 #   upgrade.yml              upgrade      관련 RPM 최신 버전으로 업그레이드 (-t upgrade 지정 시에만)
+#   09-live-query-plan.yml   liveplan     WEM 1.6 이상: live query plan rpm + extension (WHPG 재시작 가능, -t upgrade 에서도 실행)
 #   10-summary.yml           (always)     서비스 상태 확인
 # =============================================================================
 

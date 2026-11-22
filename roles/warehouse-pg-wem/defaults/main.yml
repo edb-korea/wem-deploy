@@ -264,6 +264,23 @@ otelcol_sqlquery_sslmode: "prefer"
 
 
 # ----------------------------------------------------------------------------
+# Live query plan (WEM 1.6 이상)  [09-live-query-plan]  (기본 실행과 -t upgrade, -t liveplan 에서 실행)
+# ----------------------------------------------------------------------------
+# true: WEM host 의 whpg-enterprise-manager 가 wem_live_query_plan_min_version 이상이면
+#   모든 노드에 live_query_plan_package 를 설치하고, shared_preload_libraries / gp_enable_query_metrics=on 을 설정한 뒤
+#   (아직 반영되지 않았으면) WHPG 클러스터를 재시작하고 wem_live_query_plan_databases 에 extension 을 만든다
+wem_live_query_plan: true
+wem_live_query_plan_min_version: "1.6"
+live_query_plan_package: "edb-whpg7-live-query-plan"
+# extension 이름이자 shared_preload_libraries 에 넣는 라이브러리 이름
+live_query_plan_extension: "whpg_live_query_plan"
+# CREATE EXTENSION 할 데이터베이스 (없는 DB 가 있으면 실패)
+wem_live_query_plan_databases: ["{{ wem_whpg_database }}"]
+# 재시작 방식 (gpstop -ar -M <값>). fast: 실행 중인 트랜잭션을 롤백하고 세션을 끊는다
+live_query_plan_restart_mode: "fast"
+
+
+# ----------------------------------------------------------------------------
 # WEM 1.4 삭제 (테스트 초기화)  [remove-wem14]
 # ----------------------------------------------------------------------------
 # WEM 1.4 삭제 (테스트 초기화용). WEM host 의 whpg-enterprise-manager 버전이 이 값 이상일 때만 삭제를 진행한다.
